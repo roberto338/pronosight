@@ -1247,7 +1247,7 @@ async function pickLeague(id){
   if(cr)cr.style.display=CUP_IDS.includes(id)?'block':'none';
   selectedLeague=LEAGUES.find(l=>l.id===id);
   selectedMatch=null;
-  preloadMatches(selectedLeague); // pré-charge les matchs en arrière-plan
+  // preload disabled // pré-charge les matchs en arrière-plan
   document.getElementById('team1').value='';
   document.getElementById('team2').value='';
   renderLeagues(); showStep(2);
@@ -2811,12 +2811,21 @@ async function callGemini(messages, useSearch, maxTokens) {
   if(!key) throw new Error('invalid x-api-key');
   var body = {model:'claude-haiku-4-5-20251001', max_tokens:maxTokens||400, messages:messages};
   if(useSearch) body.tools = [{type:'web_search_20250305',name:'web_search'}];
-  var resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':key,
-             'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify(body)
-  });
+  
+  async function doFetch() {
+    return fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,
+               'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify(body)
+    });
+  }
+  
+  var resp = await doFetch();
+  if(resp.status === 429) {
+    await new Promise(function(r){setTimeout(r,4000);});
+    resp = await doFetch();
+  }
   var data = await resp.json();
   if(data.error) throw new Error(data.error.message);
   return data;
