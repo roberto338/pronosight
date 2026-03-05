@@ -2841,66 +2841,29 @@ function _saveOddsKey(){
 
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// GEMINI API WRAPPER
+// AI API WRAPPER (Anthropic Claude)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-var GEMINI_MODEL = 'gemini-2.0-flash';
-var GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
-
-// Simulate Anthropic-style response from Gemini
 async function callGemini(messages, useSearch, maxTokens) {
   var key = getApiKey();
   if(!key) throw new Error('invalid x-api-key');
-  
-  var systemMsg = '';
-  var userMsg = '';
-  
-  // Extract system + user from messages array
-  messages.forEach(function(m) {
-    if(m.role === 'system') systemMsg = m.content;
-    else if(m.role === 'user') {
-      userMsg = typeof m.content === 'string' ? m.content 
-        : m.content.map(function(b){ return b.type==='text'?b.text:''; }).join('');
-    }
-  });
-  
-  var fullPrompt = (systemMsg ? systemMsg + '\n' : '') + userMsg;
-  
-  var tools = [];
-  if(useSearch) {
-    tools = [{googleSearch: {}}];
-  }
-  
-  var body = {
-    contents: [{role:'user', parts:[{text: fullPrompt}]}],
-    generationConfig: {maxOutputTokens: maxTokens||1000, temperature: 0.7}
-  };
-  if(tools.length) body.tools = tools;
-  
-  var url = GEMINI_BASE + GEMINI_MODEL + ':generateContent?key=' + key;
-  var resp = await fetch(url, {
+  var resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body)
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens || 400,
+      tools: useSearch ? [{type:'web_search_20250305',name:'web_search'}] : undefined,
+      messages: messages
+    })
   });
-  
-  if(!resp.ok) {
-    var err = await resp.json().catch(function(){return {};});
-    var msg = (err.error && err.error.message) || ('HTTP ' + resp.status);
-    if(resp.status === 400 && msg.includes('API_KEY')) throw new Error('invalid x-api-key');
-    throw new Error(msg);
-  }
-  
   var data = await resp.json();
-  var text = '';
-  try {
-    text = data.candidates[0].content.parts.map(function(p){return p.text||'';}).join('');
-  } catch(e) { text = ''; }
-  
-  // Return Anthropic-compatible format
-  return {
-    content: [{type:'text', text: text}],
-    error: null
-  };
+  if(data.error) throw new Error(data.error.message);
+  return data;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3485,8 +3448,8 @@ renderCats(); renderLeagues(); showStep(1); updateHistBadge();
 
 <div id="apiKeyModal">
   <div id="akBox">
-    <div id="akTitle">CLE API GEMINI</div>
-    <p id="akDesc">PronoSight a besoin de ta cle API Gemini.<br>Va sur <b style="color:#fff">aistudio.google.com</b> &rarr; Get API Key &rarr; Create API Key. <b style="color:#ffcc00">100% gratuit</b> (1500 req/jour).</p>
+    <div id="akTitle">CLE API ANTHROPIC</div>
+    <p id="akDesc">PronoSight a besoin de ta cle API Gemini.<br>Va sur <b style="color:#fff">console.anthropic.com</b> &rarr; API Keys &rarr; Create Key.</p>
     <input id="akInput" type="password" placeholder="AIza...">
     <button id="akBtn" onclick="_saveKey()">ENREGISTRER</button>
     <p id="akErr">Cle invalide (doit commencer par sk-ant-)</p>
