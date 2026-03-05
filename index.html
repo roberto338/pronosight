@@ -1255,37 +1255,95 @@ async function pickLeague(id){
 }
 
 async function loadMatches(){
-  const container=document.getElementById('matchesContainer');
-  const cacheKey=selectedLeague.id;
-  const cached=MATCH_CACHE[cacheKey];
-  
-  // Use cache if fresh (15 min)
-  if(cached && Date.now()-cached.ts < CACHE_TTL){
-    renderMatches(cached.matches, true);
-    return;
-  }
-  
-  container.innerHTML='<div class="match-loading"><div class="mini-spinner"></div>Chargement des matchs...</div>';
-  
-  const league = selectedLeague;
-  const today = new Date().toLocaleDateString('fr-FR');
-  const prompt = `Matchs de ${league.name} (${league.country}) aujourd'hui et prochains jours. JSON:{"matches":[{"team1":"x","team2":"x","date":"JJ/MM","time":"HH:MM","live":false}]}`;
-  
+  var container=document.getElementById('matchesContainer');
+  var cacheKey=selectedLeague.id;
+  var cached=MATCH_CACHE[cacheKey];
+  if(cached && Date.now()-cached.ts < CACHE_TTL){ renderMatches(cached.matches,true); return; }
+  container.innerHTML='<div class="match-loading"><div class="mini-spinner"></div>Recherche des matchs...</div>';
+  var lname=selectedLeague.name+' ('+selectedLeague.country+')';
+  var prompt='Matchs '+lname+' cette semaine. JSON:{"matches":[{"team1":"Eq1","team2":"Eq2","date":"JJ/MM","time":"HH:MM","live":false}]}';
   try{
-    const data=await callGemini([{role:"user",content:prompt}],true,400);
-    const raw=data.content.map(i=>i.type==='text'?i.text:'').join('');
-    const clean=raw.replace(/\`\`\`json|\`\`\`/g,'').trim();
-    const m=clean.match(/\{[\s\S]*\}/);
+    var data=await callGemini([{role:'user',content:prompt}],true,400);
+    var raw=data.content.map(function(i){return i.type==='text'?i.text:'';}).join('');
+    var clean=raw.replace(/```json|```/g,'').trim();
+    var m=clean.match(/[{][\s\S]*[}]/);
     if(!m) throw new Error('No JSON');
-    const parsed=JSON.parse(m[0]);
-    const matches=parsed.matches||[];
-    MATCH_CACHE[cacheKey]={matches, ts:Date.now()};
-    renderMatches(matches, false);
+    var parsed=JSON.parse(m[0]);
+    var matches=parsed.matches||[];
+    MATCH_CACHE[cacheKey]={matches:matches,ts:Date.now()};
+    renderMatches(matches,false);
   }catch(e){
-    container.innerHTML='<div class="match-loading" style="color:var(--accent2)">⚠ Chargement impossible. Utilisez la saisie manuelle.</div>';
+    container.innerHTML='<div class="match-loading" style="color:var(--accent2)">Saisie manuelle disponible ci-dessous.</div>';
   }
 }
 
+function clearMatchCache(){
+  if(selectedLeague) delete MATCH_CACHE[selectedLeague.id];
+  loadMatches();
+}
+
+function renderMatches(matches, fromCache){
+  const container=document.getElementById('matchesContainer');
+  window._matches=matches;
+  if(!matches.length){
+    container.innerHTML='<div class="match-loading">Aucun match trouvé. Saisie manuelle disponible.</div>';
+    return;
+  }
+  const cacheLabel=fromCache?`<span class="match-cached" onclick="clearMatchCache()" title="Cliquer pour rafraîchir" style="cursor:pointer">⚡ CACHE — 🔄 Rafraîchir</span>`:``;
+  const isBk=currentSport==='basket';
+  container.innerHTML=`
+    <div style="font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;letter-spacing:1px;margin-bottom:9px;display:flex;align-items:center;gap:8px">
+      ${matches.length} MATCHS TROUVÉS ${cacheLabel}
+    </div>
+    <div class="matches-list">${matches.map((m,i)=>`
+      <div class="match-item ${m.live?'live-match':''}" id="mi${i}" onclick="pickMatch(${i})">
+        <div class="match-teams">
+          <span class="match-team-name">${m.team1}</span>
+          <span class="match-vs">VS</span>
+          <span class="match-team-name">${m.team2}</span>
+        </div>
+        <div class="match-time">${m.live?'<span class="live-tag">🔴 LIVE</span>':`<div>${m.date}</div><div>${m.time}</div>`}</div>
+        <button class="match-quick-btn" onclick="event.stopPropagation();quickAnalyzeMatch(${i})">⚡ Analyser</button>
+      </div>`).join('')}
+    </div>`;
+}
+
+function pickMatch(idx){
+  const m=window._matches[idx];
+  if(!m) return;
+  selectedMatch=m;
+  document.getElementById('team1').value=m.team1;
+  document.getElementById('team2').value=m.team2;
+  document.querySelectorAll('.match-item').forEach(el=>el.classList.remove('selected','bk-sel'));
+  const el=document.getElementById('mi'+idx);
+  if(el){el.classList.add('selected');if(currentSport==='basket')el.classList.add('bk-sel')}
+}
+
+// ══════════════════════════════════════════
+// EV + KELLY CALCULATION
+// ══════════════════════════════════════════
+function calcEV(bookOdds, trueProb){
+  // EV% = (true_prob * (odds-1)) - (1 - true_prob)
+  const ev=(trueProb*(bookOdds-1))-(1-trueProb);
+  return Math.round(ev*10000)/100; // percentage
+}
+
+function calcKelly(bookOdds, trueProb, bankroll, fraction){
+  // Kelly = (p*(b+1)-1)/b  where b=odds-1
+  const b=bookOdds-1;
+  const kelly=(trueProb*(b+1)-1)/b;
+  const stake=Math.max(0, kelly*fraction*bankroll);
+  return {kelly:Math.round(kelly*10000)/100, stake:Math.round(stake*100)/100};
+}
+
+// ══════════════════════════════════════════
+// ANALYZE
+// ══════════════════════════════════════════
+function getApiKey(){return localStorage.getItem("ps_apikey")||""; }
+function saveApiKey(k){localStorage.setItem("ps_apikey",k.trim());}
+function showApiKeyModal(){document.getElementById("apiKeyModal").classList.add("show");setTimeout(function(){document.getElementById("akInput").focus();},100);}
+function _saveKey(){var k=(document.getElementById("akInput").value||"").trim();if(!k){document.getElementById("akErr").style.display="block";return;}saveApiKey(k);document.getElementById("apiKeyModal").classList.remove("show");}
+window.addEventListener("load",function(){setTimeout(function(){if(!getApiKey())showApiKeyModal();},500);renderDashboard();});
 
 async function quickAnalyzeMatch(i) {
   // Select the match first
@@ -2747,25 +2805,17 @@ function _saveOddsKey(){
 
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// AI API WRAPPER (Anthropic Claude)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AI API (Anthropic Claude)
 async function callGemini(messages, useSearch, maxTokens) {
   var key = getApiKey();
   if(!key) throw new Error('invalid x-api-key');
+  var body = {model:'claude-sonnet-4-20250514', max_tokens:maxTokens||400, messages:messages};
+  if(useSearch) body.tools = [{type:'web_search_20250305',name:'web_search'}];
   var resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens || 400,
-      tools: useSearch ? [{type:'web_search_20250305',name:'web_search'}] : undefined,
-      messages: messages
-    })
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':key,
+             'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify(body)
   });
   var data = await resp.json();
   if(data.error) throw new Error(data.error.message);
