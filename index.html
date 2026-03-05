@@ -1762,20 +1762,9 @@ async function analyze(){
 Réponds avec toutes les infos trouvées en français, de façon structurée.`;
 
   let webInfo = '';
-  try {
-    const searchRespData = await callGemini([{role:"user",content:searchPrompt}], true, 1500);
-    webInfo = searchRespData.content.map(i=>i.type==='text'?i.text:'').join('').trim();
-  } catch(e) { webInfo = 'Recherche web indisponible'; }
-
+  
   // APPEL 2: Génération JSON avec les infos collectées
-  const prompt=`Tu es un expert mondial en analyse sportive. Analyse ce match en FRANÇAIS uniquement.
-Match : ${t1} vs ${t2} | Ligue : ${league} | Date : ${matchDate} | Live : ${isLive}
-
-INFOS COLLECTÉES EN TEMPS RÉEL :
-${webInfo.slice(0, 2000)}
-
-Sur la base de ces infos, retourne UNIQUEMENT un JSON valide sans backticks ni texte autour :
-{"sport":"${sport}","team1":"${t1}","team2":"${t2}","team1_emoji":"<emoji>","team2_emoji":"<emoji>","league":"${league}","match_date":"${matchDate}","is_live":${isLive},"proba_home":<0-100>,"proba_draw":<0-100 ou 0 si basket>,"proba_away":<0-100>,"score_pred":"<ex:2-1>","score_pred_pct":<pct>,"alt_score1":"<score>","alt_score1_pct":<pct>,"alt_score2":"<score>","alt_score2_pct":<pct>,"market_btts":"<Oui/Non>","market_btts_conf":<0-100>,"market_over_line":"<2.5>","market_over":"<Over/Under>","market_over_conf":<0-100>,"market_handicap":"<ex:-1 Dom>","market_handicap_conf":<0-100>,"best_bet":"<meilleur pari>","best_bet_market":"<1 ou X ou 2 ou Over ou Under>","best_bet_confidence":<0-100>,"stars":<1-5>,"traffic_light":"<vert/orange/rouge>","analysis":"<3-4 phrases expert>","simple_explanation":"<2-3 phrases simples avec emojis pour un enfant>","team1_form":["W","W","L","D","W"],"team2_form":["L","W","D","W","L"],"blessures_team1":["Joueur1 (blessé)","Joueur2 (suspendu)"],"blessures_team2":["Joueur3 (blessé)"],"compo_team1":"<4-3-3: noms titulaires>","compo_team2":"<4-4-2: noms titulaires>","key_factors":[{"icon":"<emoji>","text":"<facteur forme recente>"},{"icon":"<emoji>","text":"<blessures/absences>"},{"icon":"<emoji>","text":"<avantage domicile>"},{"icon":"<emoji>","text":"<head-to-head confrontations directes>"},{"icon":"<emoji>","text":"<motivation et enjeux du match>"},{"icon":"<emoji>","text":"<stats offensives/defensives>"},{"icon":"☔","text":"<meteo et conditions terrain>"},{"icon":"🟨","text":"<arbitre et historique cartons>"},{"icon":"😓","text":"<fatigue calendrier chargé rotations>"},{"icon":"📊","text":"<classement position enjeux précis>"},{"icon":"💰","text":"<mouvement cotes marché bookmakers>"},{"icon":"📈","text":"<tendance Over Under 5 derniers matchs>"}],"odds_home":<cote dom ou 0>,"odds_draw":<cote nul ou 0>,"odds_away":<cote ext ou 0>,"odds_source":"<bookmaker>"}` + leg1Ctx;
+  const prompt=`${t1} vs ${t2}, ${league}, ${matchDate}. JSON:{"sport":"${sport}","team1":"${t1}","team2":"${t2}","team1_emoji":"⚽","team2_emoji":"⚽","league":"${league}","match_date":"${matchDate}","is_live":${isLive},"proba_home":0,"proba_draw":0,"proba_away":0,"score_pred":"1-1","score_pred_pct":25,"alt_score1":"2-1","alt_score1_pct":20,"alt_score2":"0-1","alt_score2_pct":15,"market_btts":"Oui","market_btts_conf":60,"market_over_line":"2.5","market_over":"Over","market_over_conf":55,"market_handicap":"-1","market_handicap_conf":50,"best_bet":"x","best_bet_market":"1","best_bet_confidence":65,"stars":3,"traffic_light":"orange","analysis":"x","simple_explanation":"x","team1_form":["W","D","L","W","D"],"team2_form":["L","W","D","L","W"],"key_factors":[{"icon":"📊","text":"x"},{"icon":"⚡","text":"x"},{"icon":"🏆","text":"x"}],"odds_home":0,"odds_draw":0,"odds_away":0,"odds_source":""}` + leg1Ctx;
 
   try{
     const data=await callGemini([{role:"user",content:prompt+leg1Ctx}], false, 3000);
@@ -2660,14 +2649,14 @@ async function buildCombos() {
 
     // ETAPE 1 : Recherche web précise des vrais matchs à venir
     var searchQuery = 'matchs ' + ctx + ' ' + today + ' demain programme résultats cotes';
-    var d1=await callGemini([{role:"user",content:'Recherche les VRAIS matchs de football programmés pour les 3 prochains jours dans ces compétitions: '+ctx+'. Date actuelle: '+today+'. Pour chaque match donne: equipe1, equipe2, competition, date et heure. Utilise des sources comme Flashscore, Livescore, BBC Sport, L-equipe. Liste UNIQUEMENT des matchs réels confirmés au programme.'}], true, 1200);
+    var d1=await callGemini([{role:"user",content:'Matchs foot prochains 3 jours: '+ctx+'. Date:'+today+'. Liste: equipe1 vs equipe2, ligue, date, heure.'}], true, 1200);
     var info=(d1.content||[]).map(function(b){return b.type==='text'?b.text:'';}).join(' ').trim()||today;
 
     res.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-family:monospace;font-size:12px">⚙️ Construction des combinés...</div>';
 
     // ETAPE 2 : Génération des combinés à partir des vrais matchs trouvés
     var sys='Tu es un expert en paris sportifs. Reponds UNIQUEMENT avec du JSON valide, rien dautre, pas de texte avant ou apres, pas de backticks. Tous les textes en FRANCAIS.';
-    var usr='Voici les vrais matchs trouvés:\n'+info.slice(0,1000)+'\n\nA partir de CES matchs réels uniquement, construis 3 combinés de EXACTEMENT '+size+' matchs chacun.\nUtilise UNIQUEMENT des matchs mentionnés ci-dessus, pas dinventions.\nRetourne ce JSON exactement (en remplaçant les exemples par les vrais matchs):\n{"combos":[{"type":"safe","label":"Sécurisé","legs":[{"team1":"NOM REEL","team2":"NOM REEL","league":"LIGUE REELLE","date":"JJ/MM","bet":"1","odds":1.45,"confidence":84,"proba":76,"reason":"Raison courte en français"}],"combined_odds":2.1,"combined_proba":42,"ev":5.2,"verdict":"Combiné sécurisé à faible risque"},{"type":"value","label":"Valeur","legs":[{"team1":"NOM REEL","team2":"NOM REEL","league":"LIGUE REELLE","date":"JJ/MM","bet":"Over 2.5","odds":1.90,"confidence":70,"proba":63,"reason":"Raison courte en français"}],"combined_odds":3.8,"combined_proba":22,"ev":9.1,"verdict":"Bonne valeur mathématique"},{"type":"balanced","label":"Équilibré","legs":[{"team1":"NOM REEL","team2":"NOM REEL","league":"LIGUE REELLE","date":"JJ/MM","bet":"1X","odds":1.65,"confidence":76,"proba":68,"reason":"Raison courte en français"}],"combined_odds":2.8,"combined_proba":32,"ev":6.5,"verdict":"Bon équilibre risque/gain"}]}\nChaque combiné doit avoir EXACTEMENT '+size+' objets dans legs. Cotes réalistes entre 1.20 et 3.50 par sélection.';
+    var usr='Matchs: '+info.slice(0,500)+'. Construis 3 combos de '+size+' matchs. JSON:{"combos":[{"type":"safe","label":"Sécurisé","legs":[{"team1":"x","team2":"x","league":"x","date":"JJ/MM","bet":"1","odds":1.45,"confidence":80,"proba":72,"reason":"x"}],"combined_odds":2.1,"combined_proba":42,"ev":5,"verdict":"x"},{"type":"value","label":"Valeur","legs":[],"combined_odds":3.8,"combined_proba":22,"ev":9,"verdict":"x"},{"type":"balanced","label":"Équilibré","legs":[],"combined_odds":2.8,"combined_proba":32,"ev":6,"verdict":"x"}]}';
 
     var d2=await callGemini([{role:"user",content:usr}], false, 4000);
     var raw=d2.content.map(function(i){return i.type==='text'?i.text:'';}).join('').trim();
