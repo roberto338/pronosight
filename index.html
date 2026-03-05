@@ -1259,50 +1259,23 @@ async function loadMatches(){
   const cacheKey=selectedLeague.id;
   const cached=MATCH_CACHE[cacheKey];
   
-  // Use cache if fresh
+  // Use cache if fresh (15 min)
   if(cached && Date.now()-cached.ts < CACHE_TTL){
     renderMatches(cached.matches, true);
     return;
   }
-
-  container.innerHTML='<div class="match-loading"><div class="mini-spinner"></div>Chargement des matchs en cours...</div>';
-  const sport=selectedLeague.sport==='basket'?'basketball':'football';
-  const leagueName=`${selectedLeague.name} ${selectedLeague.country}`.trim();
-
-  // Try TheSportsDB first (real data, instant)
-  const tsdbId = TSDB_LEAGUE_MAP[selectedLeague.id];
   
-  if(tsdbId) {
-    try {
-      const events = await getLeagueEvents(tsdbId);
-      if(events && events.length) {
-        var matches = events.map(tsdbToMatch);
-        // Sort: today first, then by time
-        var so = {"Aujourd'hui":0,"Demain":1};
-        matches.sort(function(a,b){
-          var ao=so[a.date]!==undefined?so[a.date]:2;
-          var bo=so[b.date]!==undefined?so[b.date]:2;
-          if(ao!==bo) return ao-bo;
-          return (a.time||'').localeCompare(b.time||'');
-        });
-        matches = matches.slice(0,15);
-        MATCH_CACHE[cacheKey]={matches, ts:Date.now()};
-        renderMatches(matches, false);
-        return;
-      }
-    } catch(e) { console.warn('TheSportsDB fallback to AI:', e.message); }
-  }
-
-  // Fallback: AI avec recherche web
-  const today = new Date();
-  const todayStr = today.toLocaleDateString('fr-FR');
-  const todayFull = today.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-  const prompt=`Nous sommes le ${todayFull}. Donne les matchs à venir et d'aujourd'hui pour ${leagueName} (${sport}). JSON: {"matches":[{"team1":"x","team2":"x","date":"Aujourd'hui ou JJ/MM","time":"HH:MM","live":false}]}`;
-
+  container.innerHTML='<div class="match-loading"><div class="mini-spinner"></div>Chargement des matchs...</div>';
+  
+  const league = selectedLeague;
+  const today = new Date().toLocaleDateString('fr-FR');
+  const prompt = `Matchs de ${league.name} (${league.country}) aujourd'hui et prochains jours. JSON:{"matches":[{"team1":"x","team2":"x","date":"JJ/MM","time":"HH:MM","live":false}]}`;
+  
   try{
-    const data=await callGemini([{role:"user",content:prompt}], true, 600);
+    const data=await callGemini([{role:"user",content:prompt}],true,400);
     const raw=data.content.map(i=>i.type==='text'?i.text:'').join('');
-    const m=raw.replace(/```json|```/g,'').trim().match(/\{[\s\S]*\}/);
+    const clean=raw.replace(/\`\`\`json|\`\`\`/g,'').trim();
+    const m=clean.match(/\{[\s\S]*\}/);
     if(!m) throw new Error('No JSON');
     const parsed=JSON.parse(m[0]);
     const matches=parsed.matches||[];
@@ -1313,73 +1286,6 @@ async function loadMatches(){
   }
 }
 
-function clearMatchCache(){
-  if(selectedLeague) delete MATCH_CACHE[selectedLeague.id];
-  loadMatches();
-}
-
-function renderMatches(matches, fromCache){
-  const container=document.getElementById('matchesContainer');
-  window._matches=matches;
-  if(!matches.length){
-    container.innerHTML='<div class="match-loading">Aucun match trouvé. Saisie manuelle disponible.</div>';
-    return;
-  }
-  const cacheLabel=fromCache?`<span class="match-cached" onclick="clearMatchCache()" title="Cliquer pour rafraîchir" style="cursor:pointer">⚡ CACHE — 🔄 Rafraîchir</span>`:``;
-  const isBk=currentSport==='basket';
-  container.innerHTML=`
-    <div style="font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;letter-spacing:1px;margin-bottom:9px;display:flex;align-items:center;gap:8px">
-      ${matches.length} MATCHS TROUVÉS ${cacheLabel}
-    </div>
-    <div class="matches-list">${matches.map((m,i)=>`
-      <div class="match-item ${m.live?'live-match':''}" id="mi${i}" onclick="pickMatch(${i})">
-        <div class="match-teams">
-          <span class="match-team-name">${m.team1}</span>
-          <span class="match-vs">VS</span>
-          <span class="match-team-name">${m.team2}</span>
-        </div>
-        <div class="match-time">${m.live?'<span class="live-tag">🔴 LIVE</span>':`<div>${m.date}</div><div>${m.time}</div>`}</div>
-        <button class="match-quick-btn" onclick="event.stopPropagation();quickAnalyzeMatch(${i})">⚡ Analyser</button>
-      </div>`).join('')}
-    </div>`;
-}
-
-function pickMatch(idx){
-  const m=window._matches[idx];
-  if(!m) return;
-  selectedMatch=m;
-  document.getElementById('team1').value=m.team1;
-  document.getElementById('team2').value=m.team2;
-  document.querySelectorAll('.match-item').forEach(el=>el.classList.remove('selected','bk-sel'));
-  const el=document.getElementById('mi'+idx);
-  if(el){el.classList.add('selected');if(currentSport==='basket')el.classList.add('bk-sel')}
-}
-
-// ══════════════════════════════════════════
-// EV + KELLY CALCULATION
-// ══════════════════════════════════════════
-function calcEV(bookOdds, trueProb){
-  // EV% = (true_prob * (odds-1)) - (1 - true_prob)
-  const ev=(trueProb*(bookOdds-1))-(1-trueProb);
-  return Math.round(ev*10000)/100; // percentage
-}
-
-function calcKelly(bookOdds, trueProb, bankroll, fraction){
-  // Kelly = (p*(b+1)-1)/b  where b=odds-1
-  const b=bookOdds-1;
-  const kelly=(trueProb*(b+1)-1)/b;
-  const stake=Math.max(0, kelly*fraction*bankroll);
-  return {kelly:Math.round(kelly*10000)/100, stake:Math.round(stake*100)/100};
-}
-
-// ══════════════════════════════════════════
-// ANALYZE
-// ══════════════════════════════════════════
-function getApiKey(){return localStorage.getItem("ps_apikey")||""; }
-function saveApiKey(k){localStorage.setItem("ps_apikey",k.trim());}
-function showApiKeyModal(){document.getElementById("apiKeyModal").classList.add("show");setTimeout(function(){document.getElementById("akInput").focus();},100);}
-function _saveKey(){var k=(document.getElementById("akInput").value||"").trim();if(!k){document.getElementById("akErr").style.display="block";return;}saveApiKey(k);document.getElementById("apiKeyModal").classList.remove("show");}
-window.addEventListener("load",function(){setTimeout(function(){if(!getApiKey())showApiKeyModal();},500);renderDashboard();});
 
 async function quickAnalyzeMatch(i) {
   // Select the match first
