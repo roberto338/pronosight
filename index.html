@@ -1213,7 +1213,7 @@ function preloadMatches(league) {
     var preloadContent = 'Matchs ' + lname + " aujourd'hui et demain. JSON avec matchs.";
     fetch("https://api.anthropic.com/v1/messages",{method:"POST",
       headers:{"Content-Type":"application/json","x-api-key":getApiKey(),"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:400,
+      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:400,
         tools:[{type:"web_search_20250305",name:"web_search"}],
         messages:[{role:"user",content:preloadContent}]})
     }).then(function(r){return r.json();}).then(function(data){
@@ -2809,7 +2809,7 @@ function _saveOddsKey(){
 async function callGemini(messages, useSearch, maxTokens) {
   var key = getApiKey();
   if(!key) throw new Error('invalid x-api-key');
-  var body = {model:'claude-sonnet-4-20250514', max_tokens:maxTokens||400, messages:messages};
+  var body = {model:'claude-haiku-4-5-20251001', max_tokens:maxTokens||400, messages:messages};
   if(useSearch) body.tools = [{type:'web_search_20250305',name:'web_search'}];
   var resp = await fetch('https://api.anthropic.com/v1/messages', {
     method:'POST',
