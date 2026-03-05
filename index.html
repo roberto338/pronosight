@@ -1261,9 +1261,9 @@ async function loadMatches(){
   if(cached&&Date.now()-cached.ts<CACHE_TTL){renderMatches(cached.matches,true);return;}
   container.innerHTML='<div class="match-loading"><div class="mini-spinner"></div>Chargement...</div>';
   var lname=selectedLeague.name+' ('+selectedLeague.country+')';
-  var prompt='Matchs '+lname+' cette semaine. JSON:{"matches":[{"team1":"x","team2":"x","date":"JJ/MM","time":"HH:MM","live":false}]}';
+  var prompt='Liste les matchs de '+lname+' prévus cette semaine (mars 2026). Retourne UNIQUEMENT ce JSON sans texte: {"matches":[{"team1":"NomEquipe1","team2":"NomEquipe2","date":"JJ/MM","time":"HH:MM","live":false}]}';
   try{
-    var data=await callGemini([{role:'user',content:prompt}],true,400);
+    var data=await callGemini([{role:'user',content:prompt}],false,400);
     var raw=data.content.map(function(b){return b.type==='text'?b.text:'';}).join('');
     raw=raw.replace(/```json|```/g,'').trim();
     var m=raw.match(/\{[\s\S]*\}/);
