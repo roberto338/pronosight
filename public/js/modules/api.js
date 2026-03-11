@@ -72,56 +72,45 @@ export function extractJSON(text) {
   // Étape 1: Nettoyer les backticks et balises json
   let clean = text.replace(/```json|```/g, '').trim();
   
-  // Étape 2: Supprimer les backslashes devant les guillemets
-  clean = clean.replace(/\\"/g, '"');
+  // Étape 2: Supprimer les caractères de contrôle invisibles
+  clean = clean.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
   
-  // Étape 3: Si la réponse est dupliquée (deux objets JSON), prendre le premier
-  // On cherche le pattern où un objet se termine et un autre commence
-  if (clean.includes('}{')) {
-    const firstEnd = clean.indexOf('}') + 1;
-    clean = clean.substring(0, firstEnd);
+  // Étape 3: Remplacer les guillemets courbés par des droits
+  clean = clean.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  
+  // Étape 4: Chercher le premier { et le dernier }
+  const firstBrace = clean.indexOf('{');
+  const lastBrace = clean.lastIndexOf('}');
+  
+  if (firstBrace === -1 || lastBrace === -1) return null;
+  
+  let jsonString = clean.substring(firstBrace, lastBrace + 1);
+  
+  // Étape 5: Si le JSON est dupliqué, prendre le premier objet complet
+  if (jsonString.includes('}{')) {
+    const firstEnd = jsonString.indexOf('}') + 1;
+    jsonString = jsonString.substring(0, firstEnd);
   }
   
-  // Étape 4: Si la réponse contient deux fois le même début, prendre le premier bloc
-  const matches = clean.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g);
-  if (matches && matches.length > 0) {
-    // Prendre le premier match
-    clean = matches[0];
-  }
-  
-  // Étape 5: Nettoyer les virgules en trop
-  clean = clean.replace(/,(\s*[}\]])/g, '$1');
-  
-  console.log('📊 JSON extrait:', clean.substring(0, 200));
+  console.log('📊 JSON extrait:', jsonString.substring(0, 200));
   
   // Étape 6: Essayer de parser
   try {
-    return JSON.parse(clean);
+    return JSON.parse(jsonString);
   } catch (e) {
     console.warn('⚠️ Premier échec JSON:', e.message);
     
-    // Tentative 2: Nettoyer les guillemets non échappés
+    // Tentative 2: Nettoyer les retours à la ligne dans les chaînes
     try {
-      // Remplacer les guillemets problématiques
-      let fixed = clean.replace(/"([^"]*?)(?<!\\)"([^"]*?)"/g, '"$1$2"');
+      let fixed = jsonString.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
       return JSON.parse(fixed);
     } catch {}
     
-    // Tentative 3: Extraction manuelle pour les matchs
+    // Tentative 3: Extraction du premier objet matches
     try {
-      // Pour le format {"matches": [...]}
-      const matchArray = clean.match(/\{"matches":\[.*?\]\}/);
+      const matchArray = jsonString.match(/\{"matches":\[.*?\]\}/);
       if (matchArray) {
         return JSON.parse(matchArray[0]);
-      }
-    } catch {}
-    
-    // Tentative 4: Construction manuelle du JSON
-    try {
-      // Extraire tous les objets match individuellement
-      const matchObjects = clean.match(/\{"team1":"[^"]*","team2":"[^"]*","date":"[^"]*","time":"[^"]*","live":(?:true|false)\}/g);
-      if (matchObjects && matchObjects.length > 0) {
-        return { matches: matchObjects.map(m => JSON.parse(m)) };
       }
     } catch {}
     
