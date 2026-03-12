@@ -78,19 +78,19 @@ export function extractJSON(text) {
   // Étape 3: Remplacer les guillemets courbés par des droits
   clean = clean.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
   
-  // Étape 4: Chercher le premier { et le dernier }
+  // Étape 4: Si la réponse est dupliquée, prendre seulement la première partie
+  if (clean.includes('}{')) {
+    const firstEnd = clean.indexOf('}') + 1;
+    clean = clean.substring(0, firstEnd);
+  }
+  
+  // Étape 5: Chercher le premier { et le dernier } dans ce qui reste
   const firstBrace = clean.indexOf('{');
   const lastBrace = clean.lastIndexOf('}');
   
   if (firstBrace === -1 || lastBrace === -1) return null;
   
   let jsonString = clean.substring(firstBrace, lastBrace + 1);
-  
-  // Étape 5: Si le JSON est dupliqué, prendre le premier objet complet
-  if (jsonString.includes('}{')) {
-    const firstEnd = jsonString.indexOf('}') + 1;
-    jsonString = jsonString.substring(0, firstEnd);
-  }
   
   console.log('📊 JSON extrait:', jsonString.substring(0, 200));
   
@@ -100,17 +100,23 @@ export function extractJSON(text) {
   } catch (e) {
     console.warn('⚠️ Premier échec JSON:', e.message);
     
-    // Tentative 2: Nettoyer les retours à la ligne dans les chaînes
+    // Tentative 2: Remplacer les guillemets non fermés
+    try {
+      let fixed = jsonString.replace(/"([^"]*?)(?<!\\)"/g, '"$1"');
+      return JSON.parse(fixed);
+    } catch {}
+    
+    // Tentative 3: Nettoyer les retours à la ligne dans les chaînes
     try {
       let fixed = jsonString.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
       return JSON.parse(fixed);
     } catch {}
     
-    // Tentative 3: Extraction du premier objet matches
+    // Tentative 4: Extraire manuellement les objets match
     try {
-      const matchArray = jsonString.match(/\{"matches":\[.*?\]\}/);
-      if (matchArray) {
-        return JSON.parse(matchArray[0]);
+      const matches = jsonString.match(/\{"team1":"[^"]*","team2":"[^"]*","date":"[^"]*","time":"[^"]*","live":(?:true|false)\}/g);
+      if (matches && matches.length > 0) {
+        return { matches: matches.map(m => JSON.parse(m)) };
       }
     } catch {}
     
