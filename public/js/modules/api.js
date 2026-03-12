@@ -64,7 +64,7 @@ export function extractText(data) {
   return (data.content || [])
     .filter(b => b.type === 'text')
     .map(b => b.text)
-    .join('')
+    .join('\n')
     .trim();
 }
 
