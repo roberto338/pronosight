@@ -63,7 +63,6 @@ export function extractText(data) {
     .join('')
     .trim();
 }
-
 export function extractJSON(text) {
   if (!text) return null;
   
@@ -84,25 +83,43 @@ export function extractJSON(text) {
     clean = clean.substring(0, firstEnd);
   }
   
-  // Étape 5: Chercher le premier { et le dernier } dans ce qui reste
+  // Étape 5: Compter les accolades pour détecter un JSON tronqué
+  const openBraces = (clean.match(/{/g) || []).length;
+  const closeBraces = (clean.match(/}/g) || []).length;
+  
+  if (openBraces > closeBraces) {
+    console.log(`⚠️ JSON tronqué: ajout de ${openBraces - closeBraces} accolades`);
+    clean += '}'.repeat(openBraces - closeBraces);
+  }
+  
+  // Étape 6: Vérifier les guillemets non fermés
+  const quotes = (clean.match(/"/g) || []).length;
+  if (quotes % 2 !== 0) {
+    clean += '"';
+  }
+  
+  // Étape 7: Chercher le premier { et le dernier }
   const firstBrace = clean.indexOf('{');
   const lastBrace = clean.lastIndexOf('}');
   
-  if (firstBrace === -1 || lastBrace === -1) return null;
+  if (firstBrace === -1 || lastBrace === -1) {
+    console.warn('⚠️ Aucune accolade trouvée');
+    return null;
+  }
   
   let jsonString = clean.substring(firstBrace, lastBrace + 1);
   
   console.log('📊 JSON extrait:', jsonString.substring(0, 200));
   
-  // Étape 6: Essayer de parser
+  // Étape 8: Essayer de parser
   try {
     return JSON.parse(jsonString);
   } catch (e) {
     console.warn('⚠️ Premier échec JSON:', e.message);
     
-    // Tentative 2: Remplacer les guillemets non fermés
+    // Tentative 2: Remplacer les guillemets non échappés
     try {
-      let fixed = jsonString.replace(/"([^"]*?)(?<!\\)"/g, '"$1"');
+      let fixed = jsonString.replace(/(?<!\\)"([^"]*?)(?<!\\)"/g, '"$1"');
       return JSON.parse(fixed);
     } catch {}
     
@@ -112,11 +129,32 @@ export function extractJSON(text) {
       return JSON.parse(fixed);
     } catch {}
     
-    // Tentative 4: Extraire manuellement les objets match
+    // Tentative 4: Extraire les objets matchs individuellement (pour les listes)
     try {
       const matches = jsonString.match(/\{"team1":"[^"]*","team2":"[^"]*","date":"[^"]*","time":"[^"]*","live":(?:true|false)\}/g);
       if (matches && matches.length > 0) {
+        console.log(`✅ ${matches.length} matchs extraits individuellement`);
         return { matches: matches.map(m => JSON.parse(m)) };
+      }
+    } catch {}
+    
+    // Tentative 5: Extraction des champs principaux pour l'analyse
+    try {
+      const probaHome = jsonString.match(/"proba_home":\s*(\d+)/);
+      const probaAway = jsonString.match(/"proba_away":\s*(\d+)/);
+      const probaDraw = jsonString.match(/"proba_draw":\s*(\d+)/);
+      const bestBet = jsonString.match(/"best_bet":\s*"([^"]+)"/);
+      
+      if (probaHome || probaAway || bestBet) {
+        const partial = {
+          proba_home: probaHome ? parseInt(probaHome[1]) : 40,
+          proba_away: probaAway ? parseInt(probaAway[1]) : 30,
+          proba_draw: probaDraw ? parseInt(probaDraw[1]) : 30,
+          best_bet: bestBet ? bestBet[1] : "Match à suivre",
+          best_bet_confidence: 60
+        };
+        console.log('✅ Objet partiel créé');
+        return partial;
       }
     } catch {}
     
@@ -124,6 +162,7 @@ export function extractJSON(text) {
     return null;
   }
 }
+
 // ══════════════════════════════════════════════
 // THESPORTSDB
 // ══════════════════════════════════════════════
