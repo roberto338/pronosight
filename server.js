@@ -33,10 +33,10 @@ app.use(helmet({
 app.use(cors({ origin: false }));
 app.use(express.json({ limit: '1mb' }));
 
-// ── Rate Limiting (plus généreux pour Gemini) ──
+// ── Rate Limiting ──
 const geminiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60,  // 60 requêtes/minute (Gemini est plus tolérant)
+  max: 60,
   message: { error: { message: '⏳ Trop de requêtes — attends 1 minute' } }
 });
 
@@ -56,7 +56,7 @@ const generalLimiter = rateLimit({
 app.use(express.static(join(__dirname, 'public')));
 
 // ══════════════════════════════════════════════
-// ROUTE: Gemini API Proxy (NOUVELLE VERSION)
+// ROUTE: Gemini API Proxy
 // ══════════════════════════════════════════════
 app.post('/api/gemini', geminiLimiter, async (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -65,7 +65,7 @@ app.post('/api/gemini', geminiLimiter, async (req, res) => {
   }
 
   try {
-    const { messages, useSearch = false, maxTokens = 1000, model = null } = req.body;
+    const { messages, useSearch = false, maxTokens = 4096, model = null } = req.body;
 
     // Convertir les messages au format Gemini
     const geminiMessages = [];
@@ -77,19 +77,16 @@ app.post('/api/gemini', geminiLimiter, async (req, res) => {
       }
     }
 
-    // Configuration du modèle
     const modelName = model || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     
-    // Construction de la requête Gemini
     const requestBody = {
       contents: geminiMessages,
       generationConfig: {
-        maxOutputTokens: maxTokens || 1000,
+        maxOutputTokens: Math.min(maxTokens || 4096, 8192),
         temperature: 0.7,
       }
     };
 
-    // Ajouter les outils si recherche web demandée
     if (useSearch) {
       requestBody.tools = [{ googleSearch: {} }];
     }
@@ -104,7 +101,6 @@ app.post('/api/gemini', geminiLimiter, async (req, res) => {
 
     const data = await response.json();
 
-    // Gestion des erreurs Gemini
     if (data.error) {
       const msg = data.error.message || '';
       if (response.status === 429 || msg.includes('quota') || msg.includes('rate')) {
@@ -120,7 +116,6 @@ app.post('/api/gemini', geminiLimiter, async (req, res) => {
       return res.status(response.status).json(data);
     }
 
-    // Convertir la réponse Gemini au format attendu par l'application
     const formattedResponse = {
       content: data.candidates?.[0]?.content?.parts?.map(p => ({
         type: 'text',
@@ -237,7 +232,7 @@ app.get('/api/tsdb/*', generalLimiter, async (req, res) => {
 // ══════════════════════════════════════════════
 app.get('/api/status', (req, res) => {
   res.json({
-    claude: false, // Plus utilisé
+    claude: false,
     gemini: !!process.env.GEMINI_API_KEY,
     odds: !!process.env.ODDS_API_KEY,
     footballData: !!process.env.FOOTBALL_DATA_KEY,

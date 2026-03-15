@@ -68,105 +68,45 @@ export function extractText(data) {
     .trim();
 }
 
-// ══════════════════════════════════════════════
-// EXTRACTION JSON ROBUSTE
-// ══════════════════════════════════════════════
+/** Extract JSON from Gemini text response — with auto-repair for truncated JSON */
 export function extractJSON(text) {
-
-  if (!text) return null;
-
-  console.log('🔍 Texte brut reçu:', text.substring(0, 200) + '...');
-
-  let clean = text;
-
-  // supprimer balises markdown
-  clean = clean.replace(/```json/gi, '').replace(/```/g, '');
-
-  // supprimer caractères invisibles
-  clean = clean.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
-
-  // guillemets typographiques
-  clean = clean.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-
-  clean = clean.trim();
-
-  // supprimer duplication de JSON
-  const matchesBlocks = clean.split(/(?=\{"matches")/);
-  if (matchesBlocks.length > 1) {
-    clean = matchesBlocks[0];
-  }
-
-  // chercher premier JSON valide
-  const firstBrace = clean.indexOf('{');
-  if (firstBrace === -1) {
-    console.warn("⚠️ Aucun JSON détecté");
+  const clean = text.replace(/```json|```/g, '').trim();
+  const match = clean.match(/\{[\s\S]*\}/);
+  if (!match) {
+    console.warn('🔍 Pas de JSON trouvé dans:', text.slice(0, 200));
     return null;
   }
-
-  // extraction par comptage d'accolades
-  let depth = 0;
-  let endIndex = -1;
-
-  for (let i = firstBrace; i < clean.length; i++) {
-
-    if (clean[i] === '{') depth++;
-    if (clean[i] === '}') depth--;
-
-    if (depth === 0) {
-      endIndex = i;
-      break;
-    }
-  }
-
-  if (endIndex === -1) {
-    console.warn("⚠️ JSON incomplet");
-    return null;
-  }
-
-  let jsonString = clean.substring(firstBrace, endIndex + 1);
-
-  console.log("📊 JSON extrait:", jsonString.substring(0, 200));
-
+  
   try {
-    return JSON.parse(jsonString);
+    return JSON.parse(match[0]);
+  } catch (e) {
+    console.warn('Premier échec JSON:', e.message);
   }
-  catch (e) {
-
-    console.warn("⚠️ JSON.parse erreur:", e.message);
-
-    // tentative réparation newlines
-    try {
-      const fixed = jsonString
-        .replace(/\n/g, "\\n")
-        .replace(/\r/g, "\\r")
-        .replace(/\t/g, "\\t");
-
-      return JSON.parse(fixed);
-    }
-    catch {}
-
-    // extraction objets match individuels
-    try {
-
-      const matches = jsonString.match(/\{"team1":"[^"]*","team2":"[^"]*","date":"[^"]*","time":"[^"]*"/g);
-
-      if (matches && matches.length) {
-
-        console.log(`✅ ${matches.length} matchs reconstruits`);
-
-        return {
-          matches: matches.map(m => {
-            const fixed = m + '"}';
-            return JSON.parse(fixed);
-          })
-        };
-      }
-
-    } catch {}
-
-    console.error("❌ Impossible de parser JSON");
-    return null;
+  
+  // Auto-repair truncated JSON
+  let repaired = match[0];
+  repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*[^,}\]]*$/, '');
+  
+  let openBraces = (repaired.match(/\{/g) || []).length;
+  let closeBraces = (repaired.match(/\}/g) || []).length;
+  let openBrackets = (repaired.match(/\[/g) || []).length;
+  let closeBrackets = (repaired.match(/\]/g) || []).length;
+  
+  const quoteCount = (repaired.match(/"/g) || []).length;
+  if (quoteCount % 2 !== 0) repaired += '"';
+  
+  while (closeBrackets < openBrackets) { repaired += ']'; closeBrackets++; }
+  while (closeBraces < openBraces) { repaired += '}'; closeBraces++; }
+  
+  try {
+    const result = JSON.parse(repaired);
+    console.log('✅ JSON réparé avec succès');
+    return result;
+  } catch (e2) {
+    console.error('❌ Échec réparation JSON:', repaired.slice(0, 300));
   }
+  
+  return null;
 }
 
 // ══════════════════════════════════════════════

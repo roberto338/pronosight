@@ -189,11 +189,17 @@ async function loadMatches() {
     const today = new Date();
     const todayStr = today.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
     
-    const prompt = `Liste les matchs de ${lname} pour aujourd'hui (${todayStr}) et demain.
-    
-Retourne UNIQUEMENT ce JSON: {"matches":[{"team1":"Nom","team2":"Nom","date":"JJ/MM","time":"HH:MM","live":false}]}
-Exemple: {"matches":[{"team1":"PSG","team2":"Monaco","date":"${todayStr}","time":"21:00","live":false}]}`;
-    
+    const prompt = `Donne les matchs de ${lname} pour aujourd'hui (${todayStr}) et demain.
+
+RÈGLES STRICTES :
+- Réponds avec un seul objet JSON valide
+- N'écris aucun texte avant ou après
+- N'utilise pas \`\`\`json
+- N'utilise pas Markdown
+- Si tu ne trouves aucun match, retourne exactement {"matches":[]}
+
+Format exact attendu :
+{"matches":[{"team1":"Nom","team2":"Nom","date":"JJ/MM","time":"HH:MM","live":false}]}`;    
     const data = await callGemini([{
       role: 'user',
       content: prompt
@@ -446,7 +452,20 @@ Retourne CE JSON EXACT:
   "odds_away": 4.20
 }`;
 
-    const data = await callGemini([{ role: 'user', content: prompt }], { maxTokens: 2000 });
+    const data = await callGemini([{ role: 'user', content: prompt }], { maxTokens: 6000 });
+    const data = await callGemini([{ role: 'user', content: prompt }], { maxTokens: 6000 });
+    
+    // ⚠️ VÉRIFICATION DU JSON AVANT PARSING
+    const text = extractText(data);
+    console.log('📝 Longueur réponse:', text.length);
+    
+    // Si la réponse est trop courte ou semble tronquée
+    if (text.length < 100 || !text.includes('}') || (text.match(/{/g) || []).length !== (text.match(/}/g) || []).length) {
+      console.warn('⚠️ Réponse suspecte, utilisation du plan B');
+      throw new Error('Réponse tronquée');
+    }
+    
+    let d = extractJSON(text);
     const text = extractText(data);
     let d = extractJSON(text);
     
