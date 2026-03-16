@@ -70,24 +70,95 @@ export function extractText(data) {
 
 /** Extract JSON from Gemini text response — with auto-repair for truncated JSON */
 export function extractJSON(text) {
-  const clean = text.replace(/```json|```/g, '').trim();
-  const match = clean.match(/\{[\s\S]*\}/);
-  if (!match) {
+  // Nettoie les backticks markdown
+  let clean = text.replace(/```json|\n```|```/g, '').trim();
+  
+  // Trouve le premier { et le dernier }
+  const firstBrace = clean.indexOf('{');
+  const lastBrace = clean.lastIndexOf('}');
+  
+  if (firstBrace === -1) {
     console.warn('🔍 Pas de JSON trouvé dans:', text.slice(0, 200));
     return null;
   }
   
+  // Extrait le JSON brut
+  let jsonStr = lastBrace > firstBrace 
+    ? clean.substring(firstBrace, lastBrace + 1)
+    : clean.substring(firstBrace);
+  
+  // Supprime les caractères de contrôle (retours ligne dans les strings, tabs, etc.)
+  jsonStr = jsonStr.replace(/[\x00-\x1F\x7F]/g, ' ');
+  
+  // Compacte les espaces multiples
+  jsonStr = jsonStr.replace(/\s+/g, ' ');
+  
+  // Essai 1: Parse direct
   try {
-    // Clean control characters inside JSON strings
-    const cleaned = match[0].replace(/[\x00-\x1F\x7F]/g, ' ');
-    return JSON.parse(cleaned);
+    const result = JSON.parse(jsonStr);
+    console.log('✅ JSON parsé directement');
+    return result;
   } catch (e) {
-    console.warn('Premier échec JSON:', e.message);
+    console.warn('⚠️ Premier échec JSON:', e.message);
   }
   
-  // Auto-repair truncated JSON
-  let repaired = match[0];
-  repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*[^,}\]]*$/, '');
+  // Essai 2: Réparation automatique du JSON tronqué
+  let repaired = jsonStr;
+  
+  // Supprime la dernière valeur incomplète (clé sans valeur, valeur coupée)
+  // Cas: ,"key  ou  ,"key":  ou  ,"key":"val  ou  ,"key":123
+  repaired = repaired
+    .replace(/,\s*"[^"]*"?\s*:?\s*"?[^",}\]]*$/, '')  // trailing incomplete kv
+    .replace(/,\s*$/, '')                                     // trailing comma
+    .replace(/:\s*$/, ': null')                                // trailing colon
+    .replace(/,\s*\]/, ']')                                  // comma before ]
+    .replace(/,\s*\}/, '}');                                 // comma before }
+  
+  // Ferme les guillemets ouverts
+  const quoteCount = (repaired.match(/"/g) || []).length;
+  if (quoteCount % 2 !== 0) repaired += '"';
+  
+  // Ferme les crochets et accolades manquants
+  let openBrackets = (repaired.match(/\[/g) || []).length;
+  let closeBrackets = (repaired.match(/\]/g) || []).length;
+  let openBraces = (repaired.match(/\{/g) || []).length;
+  let closeBraces = (repaired.match(/\}/g) || []).length;
+  
+  while (closeBrackets < openBrackets) { repaired += ']'; closeBrackets++; }
+  while (closeBraces < openBraces) { repaired += '}'; closeBraces++; }
+  
+  try {
+    const result = JSON.parse(repaired);
+    console.log('✅ JSON réparé avec succès (' + Object.keys(result).length + ' clés)');
+    return result;
+  } catch (e2) {
+    console.error('❌ Échec réparation:', e2.message);
+    console.error('📝 JSON tronqué (fin):', repaired.slice(-200));
+  }
+  
+  // Essai 3: Coupe tout après la dernière propriété valide
+  try {
+    // Trouve la dernière virgule suivie d'une clé complète
+    const lastValidComma = repaired.lastIndexOf('",');
+    if (lastValidComma > 0) {
+      let truncated = repaired.substring(0, lastValidComma + 1);
+      // Re-ferme les brackets
+      openBrackets = (truncated.match(/\[/g) || []).length;
+      closeBrackets = (truncated.match(/\]/g) || []).length;
+      openBraces = (truncated.match(/\{/g) || []).length;
+      closeBraces = (truncated.match(/\}/g) || []).length;
+      while (closeBrackets < openBrackets) { truncated += ']'; }
+      while (closeBraces < openBraces) { truncated += '}'; }
+      const result = JSON.parse(truncated);
+      console.log('✅ JSON récupéré par troncature (' + Object.keys(result).length + ' clés)');
+      return result;
+    }
+  } catch (e3) {
+    console.error('❌ Échec total du parsing JSON');
+  }
+  
+  return null;
+}\]]*$/, '');
   
   let openBraces = (repaired.match(/\{/g) || []).length;
   let closeBraces = (repaired.match(/\}/g) || []).length;
