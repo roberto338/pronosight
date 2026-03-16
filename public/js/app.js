@@ -1402,4 +1402,4 @@ document.addEventListener('DOMContentLoaded', initApp);
 // PWA Install prompt
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); _deferredPrompt = e; const btn = document.getElementById('pwaInstallBtn'); if (btn) btn.style.display = 'flex'; });
 
-console.log('⚡ PronoSight v4.0 chargé - Toutes les fonctions sont exposées');
+console.log('⚡ PronoSight v4.0 chargé - Toutes les fonctions sont exposées');// v4.1 deploy fix
