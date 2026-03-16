@@ -420,18 +420,8 @@ JSON avec ces clés exactes (remplace les valeurs):
     const data = await callGemini([{ role: 'user', content: prompt }], { maxTokens: 6000, jsonMode: true });
 
     
-    // ⚠️ VÉRIFICATION DU JSON AVANT PARSING
     const text = extractText(data);
     console.log('📝 Longueur réponse:', text.length);
-    
-    // Si la réponse est trop courte ou semble tronquée
-    if (text.length < 100 || !text.includes('}') || (text.match(/{/g) || []).length !== (text.match(/}/g) || []).length) {
-      console.warn('⚠️ Réponse suspecte, utilisation du plan B');
-      throw new Error('Réponse tronquée');
-    }
-    
-    let d = extractJSON(text);
-    const text = extractText(data);
     let d = extractJSON(text);
     
     // Si le JSON est invalide, on crée une analyse par défaut
