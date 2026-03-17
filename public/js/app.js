@@ -946,14 +946,98 @@ function resetBankroll() {
 function renderBankroll() {
   const d = getBankrollData();
   const initial = d.initial || parseFloat(localStorage.getItem('ps_bankroll')) || 0;
-  const log = d.log || [];
+  const resolved = getHist().filter(x => x.result !== 'pending');
+
+  // Current bankroll & stats
   let current = initial;
-  log.forEach(e => { current += (e.pnl || 0); });
+  resolved.forEach(e => { current += (parseFloat(e.pnl) || 0); });
   const profit = current - initial;
   const roi = initial > 0 ? Math.round(profit / initial * 10000) / 100 : 0;
+
   const el1 = document.getElementById('bkCurrent'); if (el1) el1.textContent = initial > 0 ? current.toFixed(0) + '€' : '—';
   const el2 = document.getElementById('bkProfit'); if (el2) { el2.textContent = initial > 0 ? (profit >= 0 ? '+' : '') + profit.toFixed(1) + '€' : '—'; el2.style.color = profit >= 0 ? '#00dd55' : '#ff3333'; }
   const el3 = document.getElementById('bkROI'); if (el3) el3.textContent = initial > 0 ? (roi >= 0 ? '+' : '') + roi + '%' : '—';
+
+  // Streak
+  let streak = 0, streakType = '';
+  for (const e of resolved) {
+    if (e.result === 'win' || e.result === 'lose') {
+      if (!streakType) streakType = e.result;
+      if (e.result === streakType) streak++;
+      else break;
+    }
+  }
+  const el4 = document.getElementById('bkStreak');
+  if (el4) {
+    if (!streak) { el4.textContent = '—'; el4.style.color = ''; }
+    else { el4.textContent = (streakType === 'win' ? '🔥 ' : '❄️ ') + streak + (streakType === 'win' ? 'W' : 'L'); el4.style.color = streakType === 'win' ? '#00dd55' : '#ff3333'; }
+  }
+
+  // Canvas chart
+  const canvas = document.getElementById('bkCanvas');
+  if (canvas && initial > 0) {
+    const ctx2 = canvas.getContext('2d');
+    const W = canvas.offsetWidth || 300, H = canvas.offsetHeight || 120;
+    canvas.width = W; canvas.height = H;
+    const points = [initial];
+    [...resolved].reverse().forEach(e => { points.push(points[points.length - 1] + (parseFloat(e.pnl) || 0)); });
+    if (points.length < 2) {
+      ctx2.fillStyle = '#555'; ctx2.font = '12px monospace'; ctx2.textAlign = 'center';
+      ctx2.fillText('Pas assez de données', W / 2, H / 2);
+    } else {
+      const minV = Math.min(...points), maxV = Math.max(...points), range = maxV - minV || 1;
+      const pad = { t: 14, b: 18, l: 8, r: 8 };
+      const toX = i => pad.l + (i / (points.length - 1)) * (W - pad.l - pad.r);
+      const toY = v => pad.t + (1 - (v - minV) / range) * (H - pad.t - pad.b);
+      ctx2.clearRect(0, 0, W, H);
+      // Baseline
+      const baseY = toY(initial);
+      ctx2.beginPath(); ctx2.strokeStyle = '#333'; ctx2.lineWidth = 1; ctx2.setLineDash([4, 4]);
+      ctx2.moveTo(pad.l, baseY); ctx2.lineTo(W - pad.r, baseY); ctx2.stroke(); ctx2.setLineDash([]);
+      // Gradient fill
+      const isPos = current >= initial;
+      const grad = ctx2.createLinearGradient(0, pad.t, 0, H - pad.b);
+      grad.addColorStop(0, isPos ? 'rgba(0,221,85,0.25)' : 'rgba(255,51,51,0.25)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx2.beginPath();
+      ctx2.moveTo(toX(0), toY(points[0]));
+      points.forEach((v, i) => { if (i > 0) ctx2.lineTo(toX(i), toY(v)); });
+      ctx2.lineTo(toX(points.length - 1), H - pad.b); ctx2.lineTo(toX(0), H - pad.b);
+      ctx2.closePath(); ctx2.fillStyle = grad; ctx2.fill();
+      // Line
+      ctx2.beginPath(); ctx2.strokeStyle = isPos ? '#00dd55' : '#ff3333'; ctx2.lineWidth = 2; ctx2.lineJoin = 'round';
+      ctx2.moveTo(toX(0), toY(points[0]));
+      points.forEach((v, i) => { if (i > 0) ctx2.lineTo(toX(i), toY(v)); });
+      ctx2.stroke();
+      // Last dot
+      ctx2.beginPath(); ctx2.arc(toX(points.length - 1), toY(points[points.length - 1]), 4, 0, Math.PI * 2);
+      ctx2.fillStyle = isPos ? '#00dd55' : '#ff3333'; ctx2.fill();
+      // Labels
+      ctx2.fillStyle = '#888'; ctx2.font = '10px monospace'; ctx2.textAlign = 'left';
+      ctx2.fillText(Math.round(maxV) + '€', pad.l + 2, pad.t + 10);
+      ctx2.fillText(Math.round(minV) + '€', pad.l + 2, H - pad.b - 2);
+    }
+  }
+
+  // Log
+  const logEl = document.getElementById('bkLog');
+  if (logEl) {
+    if (!resolved.length) {
+      logEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px;font-family:\'JetBrains Mono\',monospace">Aucune mise enregistrée</div>';
+    } else {
+      logEl.innerHTML = resolved.slice(0, 20).map(e => {
+        const pnl = parseFloat(e.pnl) || 0;
+        const icon = e.result === 'win' ? '✅' : e.result === 'lose' ? '❌' : '↩️';
+        const col = e.result === 'win' ? '#00dd55' : e.result === 'lose' ? '#ff3333' : '#888';
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <div style="font-size:16px">${icon}</div>
+          <div style="flex:1"><div style="font-weight:600">${e.team1} vs ${e.team2}</div>
+          <div style="color:var(--muted);font-size:10px;font-family:'JetBrains Mono',monospace">${e.best_bet} · ${e.date}</div></div>
+          <div style="font-weight:700;color:${col}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}€</div>
+        </div>`;
+      }).join('');
+    }
+  }
 }
 
 // ══════════════════════════════════════════════
