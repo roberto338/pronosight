@@ -678,6 +678,30 @@ function renderResults(d, evData, kellyData, leg1Score) {
     </div></div>
     <div class="analysis-block ${isBk ? 'bk' : ''}"><div class="analysis-header">📊 Analyse experte IA</div>${d.analysis}</div>
     <div class="proba-section"><div class="section-title">🔑 Facteurs clés</div><div class="factors-grid">${factors}</div></div>
+    <div class="chat-section">
+      <div class="chat-header">
+        <div class="chat-avatar">🤖</div>
+        <div>
+          <div class="chat-title">Assistant IA</div>
+          <div class="chat-subtitle">Questions sur cette analyse ou sur n'importe quel match</div>
+        </div>
+      </div>
+      <div class="chat-suggestions">
+        <button class="chat-chip" onclick="chatQuickSuggestion('Pourquoi ce pronostic ?')">Pourquoi ce pronostic ?</button>
+        <button class="chat-chip" onclick="chatQuickSuggestion('Quels sont les risques ?')">Quels risques ?</button>
+        <button class="chat-chip" onclick="chatQuickSuggestion('Que miseriez-vous et combien ?')">Que miser ?</button>
+        <button class="chat-chip" onclick="chatQuickSuggestion('Donne-moi les stats clés des deux équipes')">Stats des équipes</button>
+      </div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-msg chat-msg-ai">
+          <div class="chat-bubble-ai">Bonjour ! Je peux vous expliquer cette analyse, discuter des risques, ou analyser n'importe quel autre match. Que souhaitez-vous savoir ?</div>
+        </div>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" class="chat-input" id="chatInput" placeholder="Ex: Pourquoi ce pronostic ? ou Analyse PSG vs Lyon..." onkeydown="handleChatKey(event)" maxlength="400">
+        <button class="chat-send-btn" id="chatSendBtn" onclick="sendChatMessage()">➤</button>
+      </div>
+    </div>
   `;
 
   const c = document.getElementById('results');
@@ -694,6 +718,7 @@ function renderResults(d, evData, kellyData, leg1Score) {
   }, 120);
   if(c) c.scrollIntoView({ behavior: 'smooth', block: 'start' });
   state.chatCtx = d;
+  state.chatHistory = [];
   addToHistory(d, evData);
 }
 // Nouveau système de confiance avancé
@@ -1533,6 +1558,83 @@ window.filterLive = filterLive;
 window.prefillFromLive = prefillFromLive;
 window.saveLiveKey = saveLiveKey;
 window.clearMatchCache = clearMatchCache;
+
+// ══════════════════════════════════════════════
+// CHAT IA
+// ══════════════════════════════════════════════
+function chatQuickSuggestion(text) {
+  const input = document.getElementById('chatInput');
+  if (!input) return;
+  input.value = text;
+  sendChatMessage();
+}
+
+function handleChatKey(e) {
+  if (e.key === 'Enter') sendChatMessage();
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById('chatInput');
+  const msgs = document.getElementById('chatMessages');
+  const sendBtn = document.getElementById('chatSendBtn');
+  if (!input || !msgs) return;
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  // Bulle utilisateur
+  const userEl = document.createElement('div');
+  userEl.className = 'chat-msg chat-msg-user';
+  userEl.innerHTML = `<div class="chat-bubble-user">${msg.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>`;
+  msgs.appendChild(userEl);
+
+  // Indicateur de frappe
+  const typingEl = document.createElement('div');
+  typingEl.className = 'chat-msg chat-msg-ai';
+  typingEl.id = 'chatTyping';
+  typingEl.innerHTML = '<div class="chat-typing"><span></span><span></span><span></span></div>';
+  msgs.appendChild(typingEl);
+  msgs.scrollTop = msgs.scrollHeight;
+  if (sendBtn) sendBtn.disabled = true;
+
+  const ctx = state.chatCtx;
+  const contextPrompt = ctx
+    ? `Tu es un expert en pronostics sportifs pour PronoSight. Contexte du match analysé — ${ctx.team1} vs ${ctx.team2} (${ctx.league}, ${ctx.match_date || 'à venir'}). Meilleur pari: ${ctx.best_bet} (confiance ${ctx.best_bet_confidence}%). Probabilités: ${ctx.team1} ${ctx.proba_home}%, Nul ${ctx.proba_draw || 0}%, ${ctx.team2} ${ctx.proba_away}%. Score prédit: ${ctx.score_pred}. Analyse: ${(ctx.analysis || '').slice(0, 500)}. Réponds en français, de manière concise (2-4 phrases max). Tu peux aussi analyser d'autres matchs si demandé.`
+    : `Tu es un expert en pronostics sportifs pour PronoSight. Réponds en français, de manière concise (2-4 phrases max).`;
+
+  const messages = [
+    { role: 'user', content: contextPrompt },
+    { role: 'assistant', content: 'Compris, je suis prêt à répondre à vos questions.' },
+    ...state.chatHistory,
+    { role: 'user', content: msg }
+  ];
+
+  try {
+    const data = await callGemini(messages, { maxTokens: 600 });
+    const reply = extractText(data);
+    typingEl.remove();
+    const aiEl = document.createElement('div');
+    aiEl.className = 'chat-msg chat-msg-ai';
+    aiEl.innerHTML = `<div class="chat-bubble-ai">${reply.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>`;
+    msgs.appendChild(aiEl);
+    state.chatHistory.push({ role: 'user', content: msg });
+    state.chatHistory.push({ role: 'assistant', content: reply });
+  } catch (e) {
+    typingEl.remove();
+    const errEl = document.createElement('div');
+    errEl.className = 'chat-msg chat-msg-ai';
+    const errTxt = e.message.includes('429') ? 'Limite API atteinte, réessaie dans quelques secondes.' : 'Erreur de connexion, réessaie.';
+    errEl.innerHTML = `<div class="chat-bubble-ai" style="color:var(--ev-neg)">⚠️ ${errTxt}</div>`;
+    msgs.appendChild(errEl);
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+}
+
+window.chatQuickSuggestion = chatQuickSuggestion;
+window.handleChatKey = handleChatKey;
+window.sendChatMessage = sendChatMessage;
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', initApp);
