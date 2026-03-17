@@ -657,6 +657,7 @@ function renderResults(d, evData, kellyData, leg1Score, realOddsData) {
 
   const globalConf = d.fdData ? computeAdvancedConfidence(d, d.fdData).global : computeGlobalConfidence(d, evData);
   const confInfo = getConfidenceLabel(globalConf);
+  const starsText = confInfo.label;
   const tl = d.traffic_light || 'orange';
   const tlEmoji = tl === 'vert' ? '🟢' : tl === 'orange' ? '🟡' : '🔴';
   const tlLabel = tl === 'vert' ? 'BON PARI' : tl === 'orange' ? 'MOYEN' : 'RISQUÉ';
