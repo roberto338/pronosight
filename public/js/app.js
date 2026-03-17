@@ -1371,15 +1371,16 @@ async function buildCombos() {
     if (!combos.length) throw new Error('Aucun combiné généré');
 
     res.innerHTML = combos.map((combo, ci) => {
-      const odds = combo.combined_odds || combo.legs.reduce((a, l) => Math.round(a * l.odds * 100) / 100, 1);
-      const proba = combo.combined_proba || Math.round(combo.legs.reduce((a, l) => a * (l.proba / 100), 1) * 10000) / 100;
+      const legs = combo.legs || [];
+      const odds = combo.combined_odds || Math.round(legs.reduce((a, l) => a * (l.odds || 1), 1) * 100) / 100;
+      const proba = combo.combined_proba || Math.round(legs.reduce((a, l) => a * ((l.proba || 50) / 100), 1) * 10000) / 100;
       const ev = combo.ev ?? Math.round((proba / 100 * (odds - 1) - (1 - proba / 100)) * 10000) / 100;
       const isPos = ev > 0;
       const typeStyles = { safe: { cls: 'csafe', lbl: '🛡️ SÉCURISÉ' }, value: { cls: 'cvalue', lbl: '💹 VALEUR' }, balanced: { cls: 'cbalanced', lbl: '⚖️ ÉQUILIBRÉ' } };
       const t = typeStyles[combo.type] || typeStyles.balanced;
       return `<div class="combo-card ${t.cls}">
         <div class="combo-badge">${t.lbl}</div>
-        <div class="combo-legs">${combo.legs.map((leg, i) => `
+        <div class="combo-legs">${legs.map((leg, i) => `
           <div class="combo-leg"><div class="combo-leg-num">${i + 1}</div><div class="combo-leg-info">
             <div class="combo-leg-match">${leg.team1} vs ${leg.team2}</div>
             <div class="combo-leg-bet">🎯 ${leg.bet} @ ${leg.odds}</div>
