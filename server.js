@@ -237,7 +237,6 @@ app.get('/api/tsdb/*', generalLimiter, async (req, res) => {
 // ══════════════════════════════════════════════
 app.get('/api/status', (req, res) => {
   res.json({
-    claude: false,
     gemini: !!process.env.GEMINI_API_KEY,
     odds: !!process.env.ODDS_API_KEY,
     footballData: !!process.env.FOOTBALL_DATA_KEY,
