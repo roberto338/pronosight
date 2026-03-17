@@ -53,6 +53,9 @@ async function initApp() {
   showStep(1);
   updateHistBadge();
   renderDashboard();
+  // Scan auto toutes les 3h si notifications activées
+  autoScanAlerts();
+  setInterval(autoScanAlerts, 3 * 60 * 60 * 1000);
 }
 
 // ══════════════════════════════════════════════
@@ -394,11 +397,12 @@ async function analyze() {
   const isLive = state.selectedMatch?.live || false;
 
   try {
-    // Récupérer données football-data, classement et H2H en parallèle
-    const [fdData, standings, h2hEvents] = await Promise.all([
+    // Récupérer données football-data, classement, H2H et cotes réelles en parallèle
+    const [fdData, standings, h2hEvents, realOdds] = await Promise.all([
       fetchMatchDetails(t1, t2, state.selectedLeague?.id),
       fetchLeagueStandings(state.selectedLeague?.id),
-      fetchH2H(state.selectedMatch?.home_team_id, state.selectedMatch?.away_team_id)
+      fetchH2H(state.selectedMatch?.home_team_id, state.selectedMatch?.away_team_id),
+      fetchRealOdds(t1, t2, state.selectedLeague?.id)
     ]);
 
     // Extraire les stats des deux équipes depuis le classement
@@ -574,7 +578,8 @@ RÈGLES ABSOLUES:
     // Remplacer l'appel à computeGlobalConfidence par computeAdvancedConfidence dans renderResults
     // On va stocker fdData dans d pour qu'il soit accessible dans renderResults
     d.fdData = fdData;
-    
+    d.realOdds = realOdds;
+
     renderResults(d, evData, kellyData, '');
     
   } catch (e) {
@@ -678,6 +683,30 @@ function renderResults(d, evData, kellyData, leg1Score) {
     ? `<div class="alt-bets-section"><div class="section-title">🎯 Marchés alternatifs</div><div class="alt-bets-grid">${altBetsHTML}</div></div>`
     : '';
 
+  let oddsTableBlock = '';
+  if (d.realOdds?.bookmakers && Object.keys(d.realOdds.bookmakers).length) {
+    const bks = d.realOdds.bookmakers;
+    const allHomes = Object.values(bks).map(b => b.home).filter(Boolean);
+    const allDraws = Object.values(bks).map(b => b.draw).filter(Boolean);
+    const allAways = Object.values(bks).map(b => b.away).filter(Boolean);
+    const bestHome = Math.max(...allHomes), bestDraw = Math.max(...allDraws), bestAway = Math.max(...allAways);
+    const rows = Object.entries(bks).map(([name, odds]) => {
+      const hBest = odds.home === bestHome ? ' odds-best' : '';
+      const dBest = odds.draw === bestDraw ? ' odds-best' : '';
+      const aBest = odds.away === bestAway ? ' odds-best' : '';
+      const drawCell = odds.draw ? `<td class="odds-cell${dBest}">${odds.draw.toFixed(2)}</td>` : '<td class="odds-cell odds-na">—</td>';
+      return `<tr><td class="odds-bk">${name}</td><td class="odds-cell${hBest}">${odds.home?.toFixed(2) || '—'}</td>${drawCell}<td class="odds-cell${aBest}">${odds.away?.toFixed(2) || '—'}</td></tr>`;
+    }).join('');
+    oddsTableBlock = `<div class="odds-table-section">
+      <div class="section-title">📡 Cotes réelles bookmakers</div>
+      <table class="odds-table">
+        <thead><tr><th>Bookmaker</th><th>${d.team1}</th><th>Nul</th><th>${d.team2}</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="odds-best-hint">🟢 Meilleure cote disponible</div>
+    </div>`;
+  }
+
   const html = `
     <button class="new-btn" onclick="resetToStart()">← Nouvelle analyse</button>
     <div class="result-tracker" id="resultTracker">
@@ -724,6 +753,7 @@ function renderResults(d, evData, kellyData, leg1Score) {
     <div class="analysis-block ${isBk ? 'bk' : ''}"><div class="analysis-header">📊 Analyse experte IA</div>${d.analysis}</div>
     <div class="proba-section"><div class="section-title">🔑 Facteurs clés</div><div class="factors-grid">${factors}</div></div>
     ${altBetsBlock}
+    ${oddsTableBlock}
     <div class="chat-section">
       <div class="chat-header">
         <div class="chat-avatar">🤖</div>
@@ -1353,6 +1383,32 @@ function renderAlertFavs() {
 function toggleFav(id) { const f = getFavs(); const idx = f.indexOf(id); if (idx >= 0) f.splice(idx, 1); else f.push(id); saveFavs(f); renderAlertFavs(); }
 
 function requestNotifPerm() { Notification.requestPermission().then(p => { if (p === 'granted') { document.getElementById('alertPermBanner').style.display = 'none'; new Notification('PronoSight', { body: 'Notifications activées !' }); } }); }
+
+async function autoScanAlerts() {
+  if (Notification.permission !== 'granted') return;
+  const favs = getFavs();
+  if (!favs.length) return;
+  const lastScan = parseInt(localStorage.getItem('ps_last_auto_scan') || '0');
+  if (Date.now() - lastScan < 3 * 60 * 60 * 1000) return;
+  localStorage.setItem('ps_last_auto_scan', String(Date.now()));
+  const thresh = parseInt(localStorage.getItem('ps_alert_thresh') || '70');
+  const names = LEAGUES.filter(l => favs.includes(l.id)).map(l => l.name + ' (' + l.country + ')').join(', ');
+  try {
+    const data = await callGemini([{
+      role: 'user',
+      content: `Recherche les matchs dans les 24h pour : ${names}. Retourne uniquement JSON: {"signals":[{"league":"x","team1":"x","team2":"x","best_bet":"x","confidence":75}]} Seulement confidence >= ${thresh}. Max 5.`
+    }], { maxTokens: 600 });
+    const parsed = extractJSON(extractText(data));
+    const signals = parsed?.signals || [];
+    signals.forEach(s => {
+      new Notification(`⚡ PronoSight — ${s.team1} vs ${s.team2}`, {
+        body: `🎯 ${s.best_bet} · ${s.confidence}% confiance\n${s.league}`,
+        icon: '/favicon.ico',
+        tag: `ps-${s.team1}-${s.team2}`
+      });
+    });
+  } catch { /* silencieux */ }
+}
 
 async function scanAlerts() {
   const favs = getFavs();

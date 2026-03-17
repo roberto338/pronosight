@@ -689,6 +689,17 @@ body.light-mode::before{background:none}
 .result-push:hover,.result-push.result-btn-active{background:rgba(255,204,0,.1);border-color:var(--yellow);color:var(--yellow)}
 .result-share:hover{background:rgba(0,170,255,.12);border-color:#00aaff;color:#00aaff}
 
+/* ── COTES BOOKMAKERS ── */
+.odds-table-section{margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;overflow-x:auto}
+.odds-table{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:12px;margin-top:12px}
+.odds-table thead th{text-align:left;padding:6px 10px;font-size:10px;letter-spacing:1.5px;color:var(--muted);border-bottom:1px solid var(--border2)}
+.odds-bk{padding:8px 10px;color:var(--text2);white-space:nowrap}
+.odds-cell{padding:8px 10px;text-align:right;font-weight:700;color:var(--text)}
+.odds-best{color:#00dd55;background:rgba(0,221,85,.07);border-radius:4px}
+.odds-na{color:var(--muted);text-align:right;padding:8px 10px}
+.odds-best-hint{font-size:10px;color:#00dd55;margin-top:8px;font-family:'JetBrains Mono',monospace}
+.odds-table tbody tr:hover{background:var(--surface2)}
+
 /* ── MARCHÉS ALTERNATIFS ── */
 .alt-bets-section{margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px}
 .alt-bets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:12px}
