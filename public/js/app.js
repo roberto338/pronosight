@@ -872,6 +872,29 @@ function renderHistory() {
   const confEl = document.getElementById('hAvgConf');
   if (confEl) confEl.textContent = avgConf ? avgConf + '%' : '—';
 
+  // Stats par ligue
+  const leagueEl = document.getElementById('hLeagueStats');
+  if (leagueEl) {
+    const byLeague = {};
+    h.forEach(x => {
+      const k = x.league || 'Autre';
+      if (!byLeague[k]) byLeague[k] = { total: 0, wins: 0, loses: 0 };
+      byLeague[k].total++;
+      if (x.result === 'win') byLeague[k].wins++;
+      else if (x.result === 'lose') byLeague[k].loses++;
+    });
+    const sorted = Object.entries(byLeague).sort((a, b) => b[1].total - a[1].total).slice(0, 5);
+    leagueEl.innerHTML = sorted.length ? sorted.map(([league, s]) => {
+      const wr = s.wins + s.loses > 0 ? Math.round(s.wins / (s.wins + s.loses) * 100) : null;
+      const col = wr === null ? '#888' : wr >= 60 ? '#00dd55' : wr >= 40 ? '#ffcc00' : '#ff3333';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">
+        <div style="flex:1;color:var(--text2)">${league}</div>
+        <div style="color:var(--muted)">${s.total} analyses</div>
+        <div style="font-weight:700;color:${col};min-width:36px;text-align:right">${wr !== null ? wr + '%' : '—'}</div>
+      </div>`;
+    }).join('') : '';
+  }
+
   const list = document.getElementById('histList');
   if (!h.length) { list.innerHTML = '<div class="hist-empty">📭 Aucune analyse</div>'; return; }
   list.innerHTML = h.map(it => {
