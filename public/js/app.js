@@ -410,12 +410,74 @@ async function analyze() {
       webInfo = extractText(searchData);
     } catch { webInfo = 'Recherche web indisponible'; }
 
-    // Prompt amélioré
-    const prompt = `Analyse sportive expert. Réponds UNIQUEMENT en JSON valide.
-Match: ${t1} vs ${t2} | ${league} | ${matchDate}
-Infos: ${webInfo.slice(0, 1200)}
-JSON avec ces clés exactes (remplace les valeurs):
-{"sport":"${sport}","team1":"${t1}","team2":"${t2}","team1_emoji":"🏠","team2_emoji":"🏃","league":"${league}","match_date":"${matchDate}","is_live":${isLive},"proba_home":55,"proba_draw":25,"proba_away":20,"score_pred":"2-1","score_pred_pct":18,"alt_score1":"1-1","alt_score1_pct":14,"alt_score2":"1-0","alt_score2_pct":12,"market_btts":"Oui","market_btts_conf":62,"market_over_line":"2.5","market_over":"Over","market_over_conf":58,"market_handicap":"-1","market_handicap_conf":50,"best_bet":"Victoire ${t1}","best_bet_market":"1","best_bet_confidence":68,"stars":3,"traffic_light":"vert","analysis":"Analyse en 3 phrases.","simple_explanation":"Explication simple avec emojis.","team1_form":["W","D","W","L","W"],"team2_form":["L","W","D","W","L"],"blessures_team1":[],"blessures_team2":[],"key_factors":[{"icon":"📊","text":"Facteur 1"},{"icon":"🏠","text":"Facteur 2"},{"icon":"💪","text":"Facteur 3"}],"odds_home":1.85,"odds_draw":3.40,"odds_away":4.20,"odds_source":"estimation"}${leg1Ctx}`;
+    // Score match aller (coupe / double confrontation)
+    const leg1Val = (document.getElementById('leg1Score') || { value: '' }).value.trim();
+    const leg1Ctx = leg1Val ? ` Score match aller: ${leg1Val}.` : '';
+
+    // Prompt principal
+    const prompt = `Tu es un expert en pronostics sportifs. Analyse ce match et réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, sans balises markdown.
+
+MATCH: ${t1} vs ${t2}
+COMPÉTITION: ${league}
+DATE: ${matchDate}${leg1Ctx}
+SPORT: ${sport}
+INFOS RÉCENTES: ${webInfo.slice(0, 1200)}
+
+Retourne EXACTEMENT cet objet JSON avec toutes ces clés, en remplaçant chaque valeur par ta vraie analyse:
+{
+  "sport": "${sport}",
+  "team1": "${t1}",
+  "team2": "${t2}",
+  "team1_emoji": "emoji représentant ${t1}",
+  "team2_emoji": "emoji représentant ${t2}",
+  "league": "${league}",
+  "match_date": "${matchDate}",
+  "is_live": ${isLive},
+  "proba_home": <entier 0-100, probabilité victoire ${t1}>,
+  "proba_draw": <entier 0-100, probabilité nul — 0 si basketball>,
+  "proba_away": <entier 0-100, probabilité victoire ${t2}>,
+  "score_pred": "<score le plus probable ex: 2-1>",
+  "score_pred_pct": <probabilité de ce score en %, entier>,
+  "alt_score1": "<score alternatif 1>",
+  "alt_score1_pct": <probabilité alt1 en %, entier>,
+  "alt_score2": "<score alternatif 2>",
+  "alt_score2_pct": <probabilité alt2 en %, entier>,
+  "market_btts": "<Oui ou Non>",
+  "market_btts_conf": <confiance BTTS en %, entier>,
+  "market_over_line": "<2.5 ou 3.5>",
+  "market_over": "<Over ou Under>",
+  "market_over_conf": <confiance Over/Under en %, entier>,
+  "market_handicap": "<ex: -1 ou +1>",
+  "market_handicap_conf": <confiance handicap en %, entier>,
+  "best_bet": "<description du meilleur pari recommandé>",
+  "best_bet_market": "<1, X, 2, Over 2.5, BTTS, etc.>",
+  "best_bet_confidence": <confiance du meilleur pari en %, entier 0-100>,
+  "stars": <note qualité du pari de 1 à 5>,
+  "traffic_light": "<vert, orange ou rouge>",
+  "analysis": "<analyse experte en 3-4 phrases, en français>",
+  "simple_explanation": "<explication simple avec emojis, en français>",
+  "team1_form": ["W","D","L","W","W"],
+  "team2_form": ["L","W","D","L","W"],
+  "blessures_team1": ["<joueur blessé si connu>"],
+  "blessures_team2": ["<joueur blessé si connu>"],
+  "key_factors": [
+    {"icon": "🏠", "text": "<facteur clé 1>"},
+    {"icon": "📊", "text": "<facteur clé 2>"},
+    {"icon": "⚽", "text": "<facteur clé 3>"},
+    {"icon": "💪", "text": "<facteur clé 4>"}
+  ],
+  "odds_home": <cote estimée victoire ${t1}, nombre décimal>,
+  "odds_draw": <cote estimée nul, nombre décimal>,
+  "odds_away": <cote estimée victoire ${t2}, nombre décimal>,
+  "odds_source": "estimation"
+}
+
+RÈGLES ABSOLUES:
+- proba_home + proba_draw + proba_away = 100
+- best_bet_confidence entre 50 et 95
+- traffic_light = "vert" si best_bet_confidence >= 70, "orange" si >= 55, "rouge" sinon
+- stars = 1 si confidence < 55, 2 si < 65, 3 si < 75, 4 si < 85, 5 si >= 85
+- Toutes les chaînes en français sauf team1_form/team2_form (W/D/L)`;
 
     const data = await callGemini([{ role: 'user', content: prompt }], { maxTokens: 6000, jsonMode: true });
 
