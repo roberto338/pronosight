@@ -765,8 +765,8 @@ function computeAdvancedConfidence(d, fdData) {
   
   // 3. Historique des confrontations
   if (fdData?.head2head?.length) {
-    const homeWins = fdData.head2head.filter(h => h.winner === 'HOME_TEAM').length;
-    scores.historique = (homeWins / fdData.head2head.length) * 100;
+    const h2hHomeWins = fdData.head2head.filter(h => h.winner === 'HOME_TEAM').length;
+    scores.historique = (h2hHomeWins / fdData.head2head.length) * 100;
   } else {
     scores.historique = 50;
   }
@@ -798,7 +798,7 @@ function computeAdvancedConfidence(d, fdData) {
   }
   
   return {
-    global: Math.round(totalScore),
+    global: Math.min(99, Math.max(10, Math.round(totalScore))),
     details: scores,
     weights: weights
   };
