@@ -348,6 +348,19 @@ export async function fetchMatchDetails(team1, team2, leagueId) {
 // Placeholder — pas encore implémenté
 export async function fetchLiveStats() { return null; }
 
+// ── Classement football-data.org ──
+export async function fetchLeagueStandings(leagueId) {
+  if (!state.apiStatus?.footballData) return null;
+  const compId = FD_COMP_MAP[leagueId];
+  if (!compId) return null;
+  try {
+    const data = await fdFetch(`competitions/${compId}/standings`);
+    if (!data?.standings?.length) return null;
+    const table = data.standings.find(s => s.type === 'TOTAL')?.table || data.standings[0]?.table;
+    return table || null;
+  } catch { return null; }
+}
+
 // ══════════════════════════════════════════════
 // API STATUS
 // ══════════════════════════════════════════════

@@ -8,7 +8,7 @@ import { state, MATCH_CACHE, getCachedAnalysis, setCachedAnalysis,
          clearOldCaches, getHist, saveHist, getFavs, saveFavs,
          getBankrollData, saveBankrollData } from './modules/state.js';
 import { callClaude, callGemini, extractText, extractJSON, tsdbFetch, getLeagueEvents,
-         tsdbToMatch, fdFetch, fdToMatch, fetchRealOdds, fetchApiStatus, fetchMatchDetails, fetchLiveStats } from './modules/api.js';
+         tsdbToMatch, fdFetch, fdToMatch, fetchRealOdds, fetchApiStatus, fetchMatchDetails, fetchLeagueStandings, fetchLiveStats } from './modules/api.js';
 // ══════════════════════════════════════════════
 // VARIABLES GLOBALES
 // ══════════════════════════════════════════════
@@ -184,6 +184,25 @@ async function loadMatches() {
       }
     } catch (e) {
       console.log('TheSportsDB indisponible:', e.message);
+    }
+  }
+
+  // Fallback football-data.org (Top 5 + coupes supportées)
+  const fdCompId = FD_COMP_MAP[state.selectedLeague.id];
+  if (fdCompId && state.apiStatus?.footballData) {
+    try {
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const nextWeekISO = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      const data = await fdFetch(`competitions/${fdCompId}/matches?dateFrom=${todayISO}&dateTo=${nextWeekISO}`);
+      if (data?.matches?.length) {
+        const leagueMeta = { name: state.selectedLeague.name, flag: state.selectedLeague.flag, id: state.selectedLeague.id };
+        const formatted = data.matches.map(m => fdToMatch(m, leagueMeta));
+        MATCH_CACHE[cacheKey] = { matches: formatted, ts: Date.now() };
+        renderMatches(formatted, false);
+        return;
+      }
+    } catch (e) {
+      console.log('football-data.org indisponible:', e.message);
     }
   }
 
@@ -372,9 +391,23 @@ async function analyze() {
   const isLive = state.selectedMatch?.live || false;
 
   try {
-    // Récupérer les données football-data si disponibles
-    const fdData = await fetchMatchDetails(t1, t2, state.selectedLeague?.id);
-    
+    // Récupérer données football-data et classement en parallèle
+    const [fdData, standings] = await Promise.all([
+      fetchMatchDetails(t1, t2, state.selectedLeague?.id),
+      fetchLeagueStandings(state.selectedLeague?.id)
+    ]);
+
+    // Extraire les stats des deux équipes depuis le classement
+    let standingsCtx = '';
+    if (standings?.length) {
+      const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const n1 = normalize(t1), n2 = normalize(t2);
+      const row1 = standings.find(r => { const n = normalize(r.team?.name || r.team?.shortName || ''); return n.includes(n1) || n1.includes(n); });
+      const row2 = standings.find(r => { const n = normalize(r.team?.name || r.team?.shortName || ''); return n.includes(n2) || n2.includes(n); });
+      const fmt = (r) => r ? `${r.position}e (${r.points} pts, ${r.won}V-${r.draw}N-${r.lost}D, forme: ${r.form || '?'})` : '?';
+      if (row1 || row2) standingsCtx = `\nCLASSEMENT OFFICIEL: ${t1}: ${fmt(row1)} | ${t2}: ${fmt(row2)}`;
+    }
+
     // Score match aller (coupe / double confrontation)
     const leg1Val = (document.getElementById('leg1Score') || { value: '' }).value.trim();
     const leg1Ctx = leg1Val ? ` Score match aller: ${leg1Val}.` : '';
@@ -385,7 +418,7 @@ async function analyze() {
 MATCH: ${t1} vs ${t2}
 COMPÉTITION: ${league}
 DATE: ${matchDate}${leg1Ctx}
-SPORT: ${sport}
+SPORT: ${sport}${standingsCtx}
 
 Retourne EXACTEMENT cet objet JSON avec toutes ces clés, en remplaçant chaque valeur par ta vraie analyse:
 {
@@ -613,6 +646,12 @@ function renderResults(d, evData, kellyData, leg1Score) {
 
   const html = `
     <button class="new-btn" onclick="resetToStart()">← Nouvelle analyse</button>
+    <div class="result-tracker" id="resultTracker">
+      <span class="result-tracker-label">Résultat de ce pari :</span>
+      <button class="result-btn result-win"  onclick="markLastResult('win')"  id="rbWin">✅ Gagné</button>
+      <button class="result-btn result-lose" onclick="markLastResult('lose')" id="rbLose">❌ Perdu</button>
+      <button class="result-btn result-push" onclick="markLastResult('push')" id="rbPush">↩️ Push</button>
+    </div>
     <div class="match-banner"><div class="match-banner-inner">
       <div class="team-block"><span class="team-emoji">${d.team1_emoji || '⚽'}</span><div class="team-big">${d.team1}</div></div>
       <div class="vs-center"><div class="vs-big">VS</div><div class="league-pill">${d.league}</div><div class="match-date-tag">${d.is_live ? '🔴 EN DIRECT' : d.match_date}</div></div>
@@ -1601,6 +1640,27 @@ async function sendChatMessage() {
     msgs.scrollTop = msgs.scrollHeight;
   }
 }
+
+function markLastResult(val) {
+  const h = getHist();
+  if (!h.length) return;
+  const it = h[0];
+  const odds = parseFloat(it.odds) || 0;
+  const stake = parseFloat(it.stake) || 10;
+  it.result = val;
+  it.pnl = val === 'win' && odds > 1 ? Math.round((odds - 1) * stake * 100) / 100 : val === 'lose' ? -stake : 0;
+  saveHist(h);
+  renderDashboard();
+  // Feedback visuel sur les boutons
+  ['rbWin','rbLose','rbPush'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.classList.remove('result-btn-active');
+  });
+  const activeId = val === 'win' ? 'rbWin' : val === 'lose' ? 'rbLose' : 'rbPush';
+  const activeBtn = document.getElementById(activeId);
+  if (activeBtn) activeBtn.classList.add('result-btn-active');
+}
+window.markLastResult = markLastResult;
 
 window.chatQuickSuggestion = chatQuickSuggestion;
 window.handleChatKey = handleChatKey;

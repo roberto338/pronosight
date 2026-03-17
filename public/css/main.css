@@ -678,6 +678,14 @@ body.light-mode::before{background:none}
 #akBtn{width:100%;padding:13px;background:linear-gradient(135deg,#ffcc00,#ff6600);color:#000;border:none;border-radius:8px;font-family:"Exo 2",sans-serif;font-weight:800;cursor:pointer;font-size:14px;letter-spacing:1px}
 #akErr{color:#ff3333;font-size:12px;margin-top:8px;display:none}
 
+/* ── RESULT TRACKER ── */
+.result-tracker{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm)}
+.result-tracker-label{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;letter-spacing:.5px;flex-shrink:0}
+.result-btn{padding:7px 14px;border:1px solid var(--border2);border-radius:20px;background:transparent;color:var(--text2);font-size:12px;font-weight:700;font-family:'Exo 2',sans-serif;cursor:pointer;transition:all .2s}
+.result-win:hover,.result-win.result-btn-active{background:rgba(0,221,85,.15);border-color:#00dd55;color:#00dd55}
+.result-lose:hover,.result-lose.result-btn-active{background:rgba(255,51,51,.15);border-color:#ff3333;color:#ff3333}
+.result-push:hover,.result-push.result-btn-active{background:rgba(255,204,0,.1);border-color:var(--yellow);color:var(--yellow)}
+
 /* ── CHAT IA ── */
 .chat-section{margin-top:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
 .chat-header{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid var(--border);background:var(--surface2)}
