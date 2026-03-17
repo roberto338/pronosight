@@ -8,7 +8,7 @@ import { state, MATCH_CACHE, getCachedAnalysis, setCachedAnalysis,
          clearOldCaches, getHist, saveHist, getFavs, saveFavs,
          getBankrollData, saveBankrollData } from './modules/state.js';
 import { callClaude, callGemini, extractText, extractJSON, tsdbFetch, getLeagueEvents,
-         tsdbToMatch, fdFetch, fdToMatch, fetchRealOdds, fetchApiStatus, fetchMatchDetails, fetchLeagueStandings, fetchLiveStats } from './modules/api.js';
+         tsdbToMatch, fdFetch, fdToMatch, fetchRealOdds, fetchApiStatus, fetchMatchDetails, fetchLeagueStandings, fetchLiveStats, fetchH2H } from './modules/api.js';
 // ══════════════════════════════════════════════
 // VARIABLES GLOBALES
 // ══════════════════════════════════════════════
@@ -394,10 +394,11 @@ async function analyze() {
   const isLive = state.selectedMatch?.live || false;
 
   try {
-    // Récupérer données football-data et classement en parallèle
-    const [fdData, standings] = await Promise.all([
+    // Récupérer données football-data, classement et H2H en parallèle
+    const [fdData, standings, h2hEvents] = await Promise.all([
       fetchMatchDetails(t1, t2, state.selectedLeague?.id),
-      fetchLeagueStandings(state.selectedLeague?.id)
+      fetchLeagueStandings(state.selectedLeague?.id),
+      fetchH2H(state.selectedMatch?.home_team_id, state.selectedMatch?.away_team_id)
     ]);
 
     // Extraire les stats des deux équipes depuis le classement
@@ -411,6 +412,15 @@ async function analyze() {
       if (row1 || row2) standingsCtx = `\nCLASSEMENT OFFICIEL: ${t1}: ${fmt(row1)} | ${t2}: ${fmt(row2)}`;
     }
 
+    // H2H
+    let h2hCtx = '';
+    if (h2hEvents?.length) {
+      const h2hLines = h2hEvents.map(e =>
+        `${e.dateEvent || ''}: ${e.strHomeTeam} ${e.intHomeScore}-${e.intAwayScore} ${e.strAwayTeam}`
+      ).join('\n');
+      h2hCtx = `\nHISTORIQUE H2H (${h2hEvents.length} derniers face-à-face):\n${h2hLines}`;
+    }
+
     // Score match aller (coupe / double confrontation)
     const leg1Val = (document.getElementById('leg1Score') || { value: '' }).value.trim();
     const leg1Ctx = leg1Val ? ` Score match aller: ${leg1Val}.` : '';
@@ -421,7 +431,7 @@ async function analyze() {
 MATCH: ${t1} vs ${t2}
 COMPÉTITION: ${league}
 DATE: ${matchDate}${leg1Ctx}
-SPORT: ${sport}${standingsCtx}
+SPORT: ${sport}${standingsCtx}${h2hCtx}
 
 Retourne EXACTEMENT cet objet JSON avec toutes ces clés, en remplaçant chaque valeur par ta vraie analyse:
 {
@@ -469,7 +479,12 @@ Retourne EXACTEMENT cet objet JSON avec toutes ces clés, en remplaçant chaque 
   "odds_home": <cote estimée victoire ${t1}, nombre décimal>,
   "odds_draw": <cote estimée nul, nombre décimal>,
   "odds_away": <cote estimée victoire ${t2}, nombre décimal>,
-  "odds_source": "estimation"
+  "odds_source": "estimation",
+  "alt_bets": [
+    {"market": "<marché ex: BTTS, Over 2.5, Double chance, Handicap>", "pick": "<sélection recommandée>", "confidence": <entier 50-90>, "desc": "<raison courte en français>"},
+    {"market": "<marché 2>", "pick": "<sélection 2>", "confidence": <entier>, "desc": "<raison courte>"},
+    {"market": "<marché 3>", "pick": "<sélection 3>", "confidence": <entier>, "desc": "<raison courte>"}
+  ]
 }
 
 RÈGLES ABSOLUES:
@@ -647,6 +662,22 @@ function renderResults(d, evData, kellyData, leg1Score) {
 
   const factors = (d.key_factors || []).map(f => `<div class="factor-item"><div class="factor-icon">${f.icon || '📌'}</div><div>${f.text}</div></div>`).join('');
 
+  const altBetsHTML = (d.alt_bets?.length)
+    ? d.alt_bets.map(b => {
+        const c = b.confidence || 0;
+        const col = c >= 70 ? '#00dd55' : c >= 55 ? '#ffcc00' : '#ff6633';
+        return `<div class="alt-bet-card">
+          <div class="alt-bet-market">${b.market}</div>
+          <div class="alt-bet-pick">${b.pick}</div>
+          <div class="alt-bet-conf" style="color:${col}">${c}%</div>
+          <div class="alt-bet-desc">${b.desc}</div>
+        </div>`;
+      }).join('')
+    : '';
+  const altBetsBlock = altBetsHTML
+    ? `<div class="alt-bets-section"><div class="section-title">🎯 Marchés alternatifs</div><div class="alt-bets-grid">${altBetsHTML}</div></div>`
+    : '';
+
   const html = `
     <button class="new-btn" onclick="resetToStart()">← Nouvelle analyse</button>
     <div class="result-tracker" id="resultTracker">
@@ -692,6 +723,7 @@ function renderResults(d, evData, kellyData, leg1Score) {
     </div></div>
     <div class="analysis-block ${isBk ? 'bk' : ''}"><div class="analysis-header">📊 Analyse experte IA</div>${d.analysis}</div>
     <div class="proba-section"><div class="section-title">🔑 Facteurs clés</div><div class="factors-grid">${factors}</div></div>
+    ${altBetsBlock}
     <div class="chat-section">
       <div class="chat-header">
         <div class="chat-avatar">🤖</div>
@@ -845,6 +877,28 @@ function setResult(id, val) {
 }
 
 function clearHistory() { if (!confirm('Effacer tout ?')) return; localStorage.removeItem('ps_hist'); renderHistory(); updateHistBadge(); }
+
+function exportCSV() {
+  const h = getHist();
+  if (!h.length) { alert('Aucune analyse à exporter.'); return; }
+  const headers = ['Date','Heure','Équipe 1','Équipe 2','Ligue','Pari recommandé','Cote','Confiance (%)','EV (%)','Mise (€)','Résultat','P&L (€)'];
+  const rows = h.map(it => [
+    it.date || '', it.time || '',
+    it.team1 || '', it.team2 || '', it.league || '',
+    it.best_bet || '', it.odds || '', it.confidence || '',
+    it.ev != null ? it.ev : '', it.stake || '',
+    it.result || 'pending', it.pnl != null ? it.pnl : ''
+  ].map(v => `"${String(v).replace(/"/g, '""')}"`));
+  const csv = '\uFEFF' + [headers, ...rows].map(r => r.join(';')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pronosight-historique-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+window.exportCSV = exportCSV;
 
 function renderHistory() {
   const h = getHist();

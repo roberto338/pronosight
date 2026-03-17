@@ -241,8 +241,21 @@ export function tsdbToMatch(e) {
     date: dateLabel, time: timeLabel, live: isLive,
     score1: e.intHomeScore, score2: e.intAwayScore,
     status: e.strStatus || 'NS', league: e.strLeague || '',
-    tsdb_id: e.idEvent
+    tsdb_id: e.idEvent,
+    home_team_id: e.idHomeTeam || null,
+    away_team_id: e.idAwayTeam || null
   };
+}
+
+export async function fetchH2H(homeTeamId, awayTeamId) {
+  if (!homeTeamId || !awayTeamId) return null;
+  try {
+    const d = await tsdbFetch('eventsh2h.php', { id: homeTeamId, id2: awayTeamId });
+    const results = d?.results || [];
+    return results
+      .filter(e => e.intHomeScore !== null && e.intHomeScore !== '')
+      .slice(0, 6);
+  } catch { return null; }
 }
 
 // ══════════════════════════════════════════════

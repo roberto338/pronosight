@@ -346,6 +346,7 @@ header{padding:28px 0 22px;display:flex;align-items:center;justify-content:space
 .hist-stat-val{font-family:'Barlow Condensed',sans-serif;font-size:26px}
 .hist-stat-lbl{font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;letter-spacing:1px;margin-top:3px}
 .hist-clear-btn{background:transparent;border:1px solid rgba(255,96,96,.3);color:#ff8080;border-radius:var(--r-xs);padding:6px 12px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace}
+.hist-export-btn{background:transparent;border:1px solid rgba(0,170,255,.3);color:#00aaff;border-radius:var(--r-xs);padding:6px 12px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace}
 .hist-result-select{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-xs);padding:5px 8px;color:var(--text);font-size:11px;font-family:'JetBrains Mono',monospace;cursor:pointer;outline:none}
 /* PARLAY */
 .parlay-leg{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px 16px;margin-bottom:10px}
@@ -687,6 +688,15 @@ body.light-mode::before{background:none}
 .result-draw:hover,.result-draw.result-btn-active{background:rgba(170,68,255,.12);border-color:var(--purple);color:var(--purple)}
 .result-push:hover,.result-push.result-btn-active{background:rgba(255,204,0,.1);border-color:var(--yellow);color:var(--yellow)}
 .result-share:hover{background:rgba(0,170,255,.12);border-color:#00aaff;color:#00aaff}
+
+/* ── MARCHÉS ALTERNATIFS ── */
+.alt-bets-section{margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.alt-bets-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:12px}
+.alt-bet-card{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px;display:flex;flex-direction:column;gap:4px}
+.alt-bet-market{font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+.alt-bet-pick{font-size:15px;font-weight:800;color:var(--text);font-family:'Exo 2',sans-serif}
+.alt-bet-conf{font-size:13px;font-weight:700;font-family:'JetBrains Mono',monospace}
+.alt-bet-desc{font-size:11px;color:var(--text2);line-height:1.4;margin-top:2px}
 
 /* ── CHAT IA ── */
 .chat-section{margin-top:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
