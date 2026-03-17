@@ -171,7 +171,7 @@ async function loadMatches() {
     return; 
   }
 
-  // Essayer TheSportsDB d'abord (c'est gratuit et fiable)
+  // TheSportsDB — seule source automatique (fiable, gratuite, sans quota)
   const tsdbId = TSDB_LEAGUE_MAP[state.selectedLeague.id];
   if (tsdbId) {
     try {
@@ -183,49 +183,20 @@ async function loadMatches() {
         return;
       }
     } catch (e) {
-      console.log('TheSportsDB indisponible, passage à Gemini');
+      console.log('TheSportsDB indisponible:', e.message);
     }
   }
 
-  // Si TheSportsDB échoue, essayer Gemini
-  try {
-    const lname = state.selectedLeague.name + ' (' + state.selectedLeague.country + ')';
-    
-    const today = new Date();
-    const todayStr = today.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-    
-    const prompt = `Donne les matchs de ${lname} pour aujourd'hui (${todayStr}) et demain.
+  // Pas de matchs trouvés → trêve ou données indisponibles
+  // On n'utilise PAS Gemini ici : il retourne des matchs incorrects en période de trêve
+  container.innerHTML = `
+    <div class="match-loading" style="color:var(--muted);line-height:1.8">
+      🗓️ <strong style="color:var(--text2)">Aucun match programmé</strong><br>
+      <span style="font-size:11px">Trêve internationale ou calendrier indisponible pour cette ligue.</span><br>
+      <span style="color:var(--accent);font-size:12px">↓ Saisissez les équipes manuellement pour obtenir une analyse</span>
+    </div>`;
 
-RÈGLES STRICTES :
-- Réponds avec un seul objet JSON valide
-- N'écris aucun texte avant ou après
-- N'utilise pas \`\`\`json
-- N'utilise pas Markdown
-- Si tu ne trouves aucun match, retourne exactement {"matches":[]}
-
-Format exact attendu :
-{"matches":[{"team1":"Nom","team2":"Nom","date":"JJ/MM","time":"HH:MM","live":false}]}`;    
-    const data = await callGemini([{
-      role: 'user',
-      content: prompt
-    }], { useSearch: true, maxTokens: 2000, cacheKey: `matches|${cacheKey}|${todayStr}` });
-    
-    const text = extractText(data);
-    const parsed = extractJSON(text);
-    
-    if (parsed?.matches && Array.isArray(parsed.matches) && parsed.matches.length > 0) {
-      MATCH_CACHE[cacheKey] = { matches: parsed.matches, ts: Date.now() };
-      renderMatches(parsed.matches, false);
-      return;
-    }
-  } catch (e) {
-    console.error('Erreur Gemini:', e);
-  }
-  
-  // Si tout échoue, afficher la saisie manuelle
-  container.innerHTML = '<div class="match-loading" style="color:var(--accent2)">Aucun match trouvé automatiquement.<br>Utilisez la saisie manuelle ci-dessous ↓</div>';
-  
-  // Pré-remplir avec des exemples selon la ligue
+  // Pré-remplir les placeholders selon la ligue
   const examples = {
     'ligue1': { team1: 'PSG', team2: 'Monaco' },
     'pl': { team1: 'Manchester City', team2: 'Arsenal' },
@@ -233,7 +204,6 @@ Format exact attendu :
     'bundesliga': { team1: 'Bayern Munich', team2: 'Dortmund' },
     'seriea': { team1: 'Inter Milan', team2: 'Juventus' }
   };
-  
   const ex = examples[state.selectedLeague.id];
   if (ex) {
     document.getElementById('team1').placeholder = ex.team1;
