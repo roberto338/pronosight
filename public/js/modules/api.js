@@ -172,17 +172,20 @@ export async function tsdbFetch(endpoint, params = {}) {
 export async function getLeagueEvents(tsdbLeagueId) {
   const todayStr = new Date().toISOString().slice(0, 10);
   const season = new Date().getFullYear();
+  // TSDB peut injecter des events d'autres ligues quand la ligue demandée
+  // est en trêve — on filtre strictement par idLeague pour éviter ça.
+  const belongsToLeague = e => String(e.idLeague) === String(tsdbLeagueId);
   let allEvents = [];
 
   try {
     const d = await tsdbFetch('eventsnextleague.php', { id: tsdbLeagueId });
-    if (d?.events?.length) allEvents = allEvents.concat(d.events);
+    if (d?.events?.length) allEvents = allEvents.concat(d.events.filter(belongsToLeague));
   } catch { /* continue */ }
 
   try {
     const d = await tsdbFetch('eventspastleague.php', { id: tsdbLeagueId });
     if (d?.events?.length) {
-      const todayEvs = d.events.filter(e => e.dateEvent === todayStr);
+      const todayEvs = d.events.filter(e => e.dateEvent === todayStr && belongsToLeague(e));
       allEvents = todayEvs.concat(allEvents);
     }
   } catch { /* continue */ }
@@ -191,7 +194,9 @@ export async function getLeagueEvents(tsdbLeagueId) {
     try {
       const d = await tsdbFetch('eventsseason.php', { id: tsdbLeagueId, s: season });
       if (d?.events?.length) {
-        allEvents = d.events.filter(e => e.dateEvent && e.dateEvent >= todayStr).slice(0, 15);
+        allEvents = d.events
+          .filter(e => e.dateEvent && e.dateEvent >= todayStr && belongsToLeague(e))
+          .slice(0, 15);
       }
     } catch { /* continue */ }
   }
@@ -199,9 +204,11 @@ export async function getLeagueEvents(tsdbLeagueId) {
   try {
     const d = await tsdbFetch('eventsday.php', { d: todayStr, l: tsdbLeagueId });
     if (d?.events?.length) {
-      d.events.forEach(e => {
-        if (!allEvents.some(x => x.idEvent === e.idEvent)) allEvents.unshift(e);
-      });
+      d.events
+        .filter(belongsToLeague)
+        .forEach(e => {
+          if (!allEvents.some(x => x.idEvent === e.idEvent)) allEvents.unshift(e);
+        });
     }
   } catch { /* continue */ }
 
