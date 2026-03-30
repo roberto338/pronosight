@@ -88,9 +88,6 @@ async function callGroq(messages, maxTokens, jsonMode) {
   return { content: [{ type: 'text', text }] };
 }
 
-// ── Static files ──
-app.use(express.static(join(__dirname, 'public')));
-
 // ══════════════════════════════════════════════
 // ROUTE: Gemini API Proxy
 // ══════════════════════════════════════════════
@@ -527,6 +524,9 @@ app.get('/api/victor/status', async (req, res) => {
     uptime:           Math.round(process.uptime()),
   });
 });
+
+// ── Static files (après toutes les routes API) ──
+app.use(express.static(join(__dirname, 'public')));
 
 // ── SPA Fallback ──
 app.get('*', (req, res) => {
