@@ -58,8 +58,14 @@ async function initApp() {
   showStep(1);
   updateHistBadge();
   renderDashboard();
-  // Charge les données Victor en arrière-plan, re-render dashboard quand prêt
+  // Charge les données Victor immédiatement, re-render dashboard quand prêt
   loadVictorData().then(() => renderDashboard());
+  // Auto-refresh Victor toutes les 5 minutes (silencieux)
+  setInterval(() => loadVictorData().then(() => renderDashboard()), 5 * 60 * 1000);
+  // Refresh au retour sur l'onglet (données toujours fraîches)
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) loadVictorData().then(() => renderDashboard());
+  });
   // Scan auto toutes les 3h si notifications activées
   autoScanAlerts();
   setInterval(autoScanAlerts, 3 * 60 * 60 * 1000);
@@ -1228,7 +1234,7 @@ function renderDashboard() {
             <div class="dash-pick-league">🎯 ${p.pronostic_principal || ''} · ${p.sport || ''}</div>
           </div>
         </div>`;
-      }).join('') + `<div style="text-align:center;padding:8px 0 2px;font-size:11px;color:var(--muted);cursor:pointer" onclick="switchNav('victor')">🎙️ Voir l'analyse complète →</div>`;
+      }).join('') + `<div style="text-align:center;padding:8px 0 2px;font-size:11px;color:var(--muted);cursor:pointer" onclick="switchNav('victor')">🎙️ Voir l'analyse complète →${victorState.lastUpdated ? ` <span style="opacity:.6">· 🔄 ${victorState.lastUpdated.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</span>` : ''}</div>`;
     } else if (hist.length) {
       rp.innerHTML = hist.slice(0, 5).map(h => {
         const rc = h.result === 'win' ? 'win' : h.result === 'lose' ? 'loss' : 'pending';
@@ -1707,6 +1713,7 @@ function calcParlay() {
 async function loadVictorData() {
   if (victorState.loading) return;
   victorState.loading = true;
+  const prevTotal = victorState.today?.total || 0;
   try {
     const [todayRes, statsRes, patternsRes, historyRes] = await Promise.all([
       fetch('/api/victor/today').then(r => r.json()),
@@ -1714,17 +1721,34 @@ async function loadVictorData() {
       fetch('/api/victor/patterns').then(r => r.json()),
       fetch('/api/victor/history?days=30').then(r => r.json())
     ]);
-    victorState.today    = todayRes;
-    victorState.stats    = statsRes;
-    victorState.patterns = patternsRes;
-    victorState.history  = historyRes;
-    victorState.loaded   = true;
+    victorState.today       = todayRes;
+    victorState.stats       = statsRes;
+    victorState.patterns    = patternsRes;
+    victorState.history     = historyRes;
+    victorState.loaded      = true;
+    victorState.lastUpdated = new Date();
+    // Notification subtile si nouveaux picks détectés
+    const newTotal = todayRes?.total || 0;
+    if (prevTotal === 0 && newTotal > 0) showVictorUpdateNotif(newTotal);
   } catch(e) {
     console.warn('[Victor] Données indisponibles:', e.message);
   } finally {
     victorState.loading = false;
   }
 }
+
+function showVictorUpdateNotif(count) {
+  // Supprime une notif existante
+  document.getElementById('victorNotif')?.remove();
+  const notif = document.createElement('div');
+  notif.id = 'victorNotif';
+  notif.style.cssText = 'position:fixed;top:58px;left:50%;transform:translateX(-50%);background:var(--accent);color:#000;padding:8px 18px;border-radius:20px;font-size:12px;font-weight:700;font-family:"Exo 2",sans-serif;z-index:9999;cursor:pointer;box-shadow:0 4px 20px rgba(0,170,255,.4);white-space:nowrap';
+  notif.textContent = `🎙️ ${count} nouveau${count > 1 ? 'x' : ''} pick${count > 1 ? 's' : ''} Victor disponible${count > 1 ? 's' : ''}`;
+  notif.onclick = () => { switchNav('victor'); notif.remove(); };
+  document.body.appendChild(notif);
+  setTimeout(() => notif.remove(), 8000);
+}
+window.showVictorUpdateNotif = showVictorUpdateNotif;
 
 function renderVictorPicks(picks, containerId) {
   const el = document.getElementById(containerId);
