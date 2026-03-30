@@ -1,29 +1,122 @@
-# PronoSight v4.1 — Architecture Sécurisée
+# PronoSight v5 — Victor IA
 
-## Quoi de neuf ?
+Plateforme de pronostics sportifs propulsée par l'intelligence artificielle.
+**Victor** analyse tous les sports, toutes compétitions, 48h à l'avance.
 
-### 🔒 Sécurité (Critique → Résolu)
-- **Backend Express** proxy toutes les API (Gemini, Odds, football-data, TheSportsDB)
-- **Zéro clé API exposée** côté client — tout dans `.env` sur le serveur
-- **Helmet** pour les headers de sécurité + CSP
-- **Rate limiting** par route (15 req/min Gemini, 20 req/min Odds)
+## Architecture
 
-### 📦 Maintenabilité (Élevée → Résolu)
-- **HTML** pur (383 lignes) — plus d'inline scripts ni styles
-- **CSS** externalisé (`main.css`, 680 lignes)
-- **JS modulaire** ES6 avec imports :
-  - `app.js` — entry point (1126 lignes)
-  - `modules/config.js` — constantes, ligues, mappings
-  - `modules/state.js` — gestion d'état centralisée
-  - `modules/api.js` — toutes les API via `/api/*` proxy
+| Composant | Technologie |
+|---|---|
+| Backend | Node.js 20 + Express |
+| IA principale | Claude Sonnet (Anthropic) + Web Search |
+| IA fallback | Gemini 2.0 Flash + Groq llama-3.1 |
+| Base de données | PostgreSQL (Render.com) |
+| Bot | Telegram @pronosight_bot |
+| Déploiement | Render.com (auto-deploy depuis GitHub) |
 
-### 🛡️ Fiabilité (Moyenne → Résolu)
-- **Plus de proxies CORS publics** (corsproxy.io, allorigins)
-- **TheSportsDB** passe par `/api/tsdb/` — zéro CORS
-- **football-data.org** passe par `/api/football-data/` — zéro CORS
-- **Gestion d'erreurs** améliorée (quota, rate limit, clé invalide)
+## Victor — Le cerveau IA
 
-## Démarrage rapide
+35 ans d'expérience simulée. Scout international, consultant TV, ex-collaborateur de staffs techniques.
+
+- Détecte automatiquement les matchs via **web search en temps réel**
+- Analyse forme, blessures, H2H, stats, météo
+- Intègre les **patterns historiques** (15 patterns de démarrage)
+- Génère pronostic principal, value bet, score prédit, phrase signature
+- **S'améliore** chaque semaine via review automatique des erreurs
+
+## Structure
+
+```
+pronosight/
+├── server.js            ← Backend Express (proxy API + routes Victor)
+├── package.json
+├── render.yaml          ← Config déploiement Render.com
+│
+├── victor/
+│   ├── prompt.js        ← Prompt système de Victor (VICTOR_PROMPT)
+│   ├── core.js          ← runVictor, checkResults, updateVictorStats,
+│   │                       weeklyVictorReview, getVictorBriefing
+│   ├── patterns.js      ← detectPatterns, updatePatternAfterResult,
+│   │                       discoverNewPatterns, formatPatternsForVictor
+│   └── test.js          ← Test rapide (node victor/test.js)
+│
+├── bot/
+│   ├── telegram.js      ← broadcastDaily, sendAlert, sendDailyStats
+│   └── test-telegram.js ← Test connexion (node bot/test-telegram.js)
+│
+├── cron/
+│   └── scheduler.js     ← 4 jobs planifiés (07h, 13h, 23h30, dim 01h)
+│
+├── db/
+│   ├── schema.sql       ← 4 tables ps_* PostgreSQL
+│   ├── database.js      ← Pool pg, query(), getClient()
+│   └── init.js          ← Init tables + 15 patterns (node db/init.js)
+│
+├── scripts/
+│   └── generate-picks.js ← Script GitHub Actions (Claude + web search)
+│
+└── public/              ← Frontend SPA (intact)
+    ├── index.html
+    ├── css/main.css
+    └── js/
+        ├── app.js
+        └── modules/
+            ├── api.js
+            ├── config.js
+            └── state.js
+```
+
+## Variables d'environnement
+
+```bash
+# OBLIGATOIRES
+ANTHROPIC_API_KEY=      # Claude Sonnet — Victor core
+GEMINI_API_KEY=         # Gemini — fallback + web search
+DATABASE_URL=           # PostgreSQL connection string
+TELEGRAM_BOT_TOKEN=     # Bot Telegram
+TELEGRAM_CHANNEL_ID=    # Canal de diffusion (-100xxxxxxxxx)
+VICTOR_API_KEY=         # Clé interne (protège /api/victor/refresh)
+
+# OPTIONNELLES
+GROQ_API_KEY=           # Fallback Groq si Gemini quota
+FOOTBALL_DATA_KEY=      # football-data.org (calendriers)
+RAPIDAPI_KEY=           # API-Football (stats, blessures)
+ODDS_API_KEY=           # The Odds API (cotes bookmakers)
+GEMINI_MODEL=gemini-2.0-flash
+```
+
+## Cron Jobs (heure de Paris)
+
+| Horaire | Action |
+|---|---|
+| 07h00 quotidien | Analyse complète du jour → broadcast Telegram |
+| 13h00 quotidien | Refresh matchs du soir |
+| 23h30 quotidien | Vérification résultats + stats journalières |
+| Dimanche 01h00 | Review hebdo + découverte nouveaux patterns |
+
+## Routes API Victor
+
+| Route | Description | Auth |
+|---|---|---|
+| `GET /api/victor/today` | Pronostics du jour | — |
+| `GET /api/victor/stats` | Taux réussite global et par sport | — |
+| `GET /api/victor/patterns` | Patterns actifs (forts/moyens/émergents) | — |
+| `GET /api/victor/history?days=30` | Historique pronostics vérifiés | — |
+| `GET /api/victor/status` | Santé du système | — |
+| `POST /api/victor/refresh` | Force un nouveau run Victor | `x-api-key` |
+
+## Routes API existantes (proxy)
+
+| Route | Source |
+|---|---|
+| `POST /api/gemini` | Gemini + Groq fallback |
+| `GET /api/odds/:sport` | The Odds API |
+| `GET /api/football-data/*` | football-data.org |
+| `GET /api/tsdb/*` | TheSportsDB |
+| `GET /api/apifootball/*` | API-Football (RapidAPI) |
+| `GET /api/status` | Statut clés API |
+
+## Lancement local
 
 ```bash
 # 1. Installer les dépendances
@@ -31,50 +124,59 @@ npm install
 
 # 2. Configurer les clés API
 cp .env.example .env
-# Éditer .env avec tes clés (seule GEMINI_API_KEY est obligatoire)
+# Remplir .env avec tes clés
 
-# 3. Lancer le serveur
-npm start
-# ou en mode dev (auto-reload)
-npm run dev
+# 3. Initialiser la base de données
+node db/init.js
 
-# 4. Ouvrir dans le navigateur
-# http://localhost:3000
+# 4. Lancer le serveur
+npm start        # production
+npm run dev      # dev (auto-reload)
+
+# Ouvrir http://localhost:3000
 ```
 
-## Structure
+## Tests
 
-```
-pronosight/
-├── server.js              ← Backend Express (proxy API, sécurité)
-├── .env                   ← Clés API (JAMAIS commité)
-├── .env.example           ← Template
-├── package.json
-├── public/
-│   ├── index.html         ← HTML pur, pas d'inline
-│   ├── css/
-│   │   └── main.css       ← Tous les styles
-│   └── js/
-│       ├── app.js         ← Entry point ES6 module
-│       └── modules/
-│           ├── config.js  ← Ligues, constantes
-│           ├── state.js   ← État global
-│           └── api.js     ← Appels API (via backend proxy)
+```bash
+# Test Victor complet (appel Claude + web search + DB)
+node victor/test.js
+
+# Test connexion Telegram
+node bot/test-telegram.js
+
+# Ré-initialiser la DB (idempotent)
+node db/init.js
 ```
 
-## Routes API (backend)
+## Déploiement Render.com
 
-| Route | Source | Clé requise |
-|-------|--------|-------------|
-| `POST /api/gemini` | Google Gemini | `GEMINI_API_KEY` |
-| `GET /api/odds/:sport` | The Odds API | `ODDS_API_KEY` |
-| `GET /api/football-data/*` | football-data.org | `FOOTBALL_DATA_KEY` |
-| `GET /api/tsdb/*` | TheSportsDB | (gratuit) |
-| `GET /api/status` | — | — |
+Variables à configurer dans **Environment Variables** du service Render :
 
-## Prochaines étapes
+```
+ANTHROPIC_API_KEY
+GEMINI_API_KEY
+GROQ_API_KEY
+DATABASE_URL
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHANNEL_ID
+VICTOR_API_KEY
+FOOTBALL_DATA_KEY
+RAPIDAPI_KEY
+ODDS_API_KEY
+GEMINI_MODEL=gemini-2.0-flash
+NODE_ENV=production
+```
 
-1. **Splitter `app.js`** en modules plus petits (analyse, history, live, combos...)
-2. **Ajouter des tests** (Jest ou Vitest)
-3. **Docker** pour le déploiement
-4. **WebSocket** pour les scores live temps réel
+Le déploiement se déclenche automatiquement à chaque push sur `master`.
+
+## Base de données
+
+Tables PostgreSQL avec préfixe `ps_` (cohabitation avec RelanceHub) :
+
+| Table | Rôle |
+|---|---|
+| `ps_pronostics` | Pronostics générés par Victor |
+| `ps_victor_patterns` | Patterns statistiques (H2H, situationnels) |
+| `ps_victor_rules` | Règles hebdomadaires auto-générées |
+| `ps_victor_stats` | Taux de réussite journaliers |

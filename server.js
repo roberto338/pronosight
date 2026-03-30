@@ -1,8 +1,12 @@
 // ══════════════════════════════════════════════════════════════
-// PronoSight v4.0 — Backend Proxy avec GEMINI
+// PronoSight v4.1 — Backend Proxy + Victor IA
 // ══════════════════════════════════════════════════════════════
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ override: true });
+import { startScheduler } from './cron/scheduler.js';
+import { query as dbQuery } from './db/database.js';
+import { runVictor } from './victor/core.js';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -326,6 +330,204 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// ══════════════════════════════════════════════
+// ROUTES VICTOR IA
+// ══════════════════════════════════════════════
+
+// ── ROUTE 1 : GET /api/victor/today ───────────
+app.get('/api/victor/today', generalLimiter, async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const { rows } = await dbQuery(
+      `SELECT * FROM ps_pronostics
+       WHERE date = $1
+       ORDER BY confiance DESC, cote_estimee DESC`,
+      [today]
+    );
+    res.json({
+      date: today,
+      total: rows.length,
+      pronostics: rows,
+      generated_at: rows[0]?.created_at || null,
+    });
+  } catch (err) {
+    console.error('[Victor/today]', err.message);
+    res.status(500).json({ error: 'Erreur récupération pronostics du jour' });
+  }
+});
+
+// ── ROUTE 2 : GET /api/victor/stats ───────────
+app.get('/api/victor/stats', generalLimiter, async (req, res) => {
+  try {
+    // Stats globales
+    const { rows: globalRows } = await dbQuery(`
+      SELECT
+        COUNT(*)                                                                     AS total,
+        COUNT(*) FILTER (WHERE pronostic_correct = true)                             AS corrects,
+        ROUND(AVG(CASE WHEN pronostic_correct = true THEN 1.0 ELSE 0 END) * 100, 2) AS taux_global,
+        ROUND(AVG(CASE
+          WHEN confiance = 'Élevé' AND pronostic_correct = true  THEN 1.0
+          WHEN confiance = 'Élevé' AND pronostic_correct = false THEN 0
+        END) * 100, 2)                                                               AS taux_eleve,
+        ROUND(AVG(CASE
+          WHEN confiance = 'Moyen' AND pronostic_correct = true  THEN 1.0
+          WHEN confiance = 'Moyen' AND pronostic_correct = false THEN 0
+        END) * 100, 2)                                                               AS taux_moyen
+      FROM ps_pronostics
+      WHERE pronostic_correct IS NOT NULL
+    `);
+
+    // Stats par sport
+    const { rows: sportRows } = await dbQuery(`
+      SELECT sport,
+        COUNT(*)                                                                     AS total,
+        COUNT(*) FILTER (WHERE pronostic_correct = true)                             AS corrects,
+        ROUND(AVG(CASE WHEN pronostic_correct = true THEN 1.0 ELSE 0 END) * 100, 2) AS taux
+      FROM ps_pronostics
+      WHERE pronostic_correct IS NOT NULL
+      GROUP BY sport
+      ORDER BY taux DESC
+    `);
+
+    // Dernière entrée stats journalières
+    const { rows: statsRows } = await dbQuery(
+      'SELECT * FROM ps_victor_stats ORDER BY date DESC LIMIT 1'
+    );
+
+    const g = globalRows[0];
+    const total = parseInt(g.total) || 0;
+    const taux  = parseFloat(g.taux_global) || 0;
+
+    res.json({
+      global: {
+        total,
+        corrects:    parseInt(g.corrects) || 0,
+        taux_global: taux,
+        taux_eleve:  parseFloat(g.taux_eleve)  || null,
+        taux_moyen:  parseFloat(g.taux_moyen)  || null,
+      },
+      par_sport:   sportRows,
+      derniere_maj: statsRows[0] || null,
+      message_victor: total > 0
+        ? `${total} pronostics vérifiés. Taux de réussite : ${taux}%`
+        : 'Aucun pronostic vérifié pour le moment.',
+    });
+  } catch (err) {
+    console.error('[Victor/stats]', err.message);
+    res.status(500).json({ error: 'Erreur récupération statistiques' });
+  }
+});
+
+// ── ROUTE 3 : GET /api/victor/patterns ────────
+app.get('/api/victor/patterns', generalLimiter, async (req, res) => {
+  try {
+    const { rows } = await dbQuery(
+      `SELECT * FROM ps_victor_patterns
+       WHERE actif = true
+       ORDER BY taux_confirmation DESC`
+    );
+
+    res.json({
+      total:     rows.length,
+      forts:     rows.filter(p => parseFloat(p.taux_confirmation) >= 70),
+      moyens:    rows.filter(p => parseFloat(p.taux_confirmation) >= 55 && parseFloat(p.taux_confirmation) < 70),
+      emergents: rows.filter(p => parseFloat(p.taux_confirmation) < 55),
+    });
+  } catch (err) {
+    console.error('[Victor/patterns]', err.message);
+    res.status(500).json({ error: 'Erreur récupération patterns' });
+  }
+});
+
+// ── ROUTE 4 : GET /api/victor/history ─────────
+app.get('/api/victor/history', generalLimiter, async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 90);
+    const { rows } = await dbQuery(
+      `SELECT * FROM ps_pronostics
+       WHERE date >= NOW() - INTERVAL '${days} days'
+         AND pronostic_correct IS NOT NULL
+       ORDER BY date DESC`,
+    );
+
+    const corrects = rows.filter(r => r.pronostic_correct === true).length;
+    const taux = rows.length > 0
+      ? Math.round((corrects / rows.length) * 100 * 100) / 100
+      : 0;
+
+    res.json({
+      periode:    `${days} jours`,
+      total:      rows.length,
+      corrects,
+      taux,
+      pronostics: rows,
+    });
+  } catch (err) {
+    console.error('[Victor/history]', err.message);
+    res.status(500).json({ error: 'Erreur récupération historique' });
+  }
+});
+
+// ── ROUTE 5 : POST /api/victor/refresh ────────
+app.post('/api/victor/refresh', async (req, res) => {
+  const apiKey = req.headers['x-api-key'];
+  const expected = process.env.VICTOR_API_KEY;
+
+  if (!expected || apiKey !== expected) {
+    return res.status(401).json({ error: 'Non autorisé — x-api-key invalide' });
+  }
+
+  console.log('🔄 [Victor/refresh] Refresh manuel demandé');
+
+  // Lance en arrière-plan sans bloquer la réponse
+  runVictor().catch(err =>
+    console.error('❌ [Victor/refresh] Erreur background:', err.message)
+  );
+
+  res.json({
+    status: 'started',
+    message: 'Victor lance l\'analyse... Résultats dans /api/victor/today dans 30-60 secondes.',
+  });
+});
+
+// ── ROUTE 6 : GET /api/victor/status ──────────
+app.get('/api/victor/status', async (req, res) => {
+  let dbStatus = 'disconnected';
+  let dbTime   = null;
+  let pronosticsToday = 0;
+  let patternsActifs  = 0;
+
+  try {
+    const { rows } = await dbQuery('SELECT NOW() as db_time');
+    dbStatus = 'connected';
+    dbTime   = rows[0].db_time;
+  } catch { /* db error handled below */ }
+
+  if (dbStatus === 'connected') {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const [p, pa] = await Promise.all([
+        dbQuery('SELECT COUNT(*) FROM ps_pronostics WHERE date = $1', [today]),
+        dbQuery('SELECT COUNT(*) FROM ps_victor_patterns WHERE actif = true'),
+      ]);
+      pronosticsToday = parseInt(p.rows[0].count) || 0;
+      patternsActifs  = parseInt(pa.rows[0].count) || 0;
+    } catch { /* counts fallback to 0 */ }
+  }
+
+  res.json({
+    status:           dbStatus === 'connected' ? 'ok' : 'degraded',
+    db:               dbStatus,
+    db_time:          dbTime,
+    claude:           process.env.ANTHROPIC_API_KEY ? 'configured' : 'missing',
+    telegram:         process.env.TELEGRAM_BOT_TOKEN ? 'configured' : 'missing',
+    pronostics_today: pronosticsToday,
+    patterns_actifs:  patternsActifs,
+    version:          '4.1.0',
+    uptime:           Math.round(process.uptime()),
+  });
+});
+
 // ── SPA Fallback ──
 app.get('*', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'index.html'));
@@ -333,12 +535,18 @@ app.get('*', (req, res) => {
 
 // ── Start ──
 app.listen(PORT, () => {
-  console.log(`\n  ⚡ PronoSight v4.0 (GEMINI) — http://localhost:${PORT}\n`);
+  console.log(`\n  ⚡ PronoSight v4.1 — http://localhost:${PORT}\n`);
   console.log('  APIs configurées:');
-  console.log(`    Gemini:        ${process.env.GEMINI_API_KEY ? '✅' : '❌ manquante'}`);
-  console.log(`    Groq (fallback):${process.env.GROQ_API_KEY ? '✅' : '⚠️  optionnelle'}`);
-  console.log(`    Odds API:      ${process.env.ODDS_API_KEY ? '✅' : '⚠️  optionnelle'}`);
-  console.log(`    Football-Data: ${process.env.FOOTBALL_DATA_KEY ? '✅' : '⚠️  optionnelle'}`);
-  console.log(`    Live API:      ${process.env.LIVE_API_KEY ? '✅' : '⚠️  optionnelle'}`);
-  console.log(`    API-Football:  ${process.env.RAPIDAPI_KEY ? '✅' : '⚠️  optionnelle (stats réelles)'}\n`);
+  console.log(`    Gemini:         ${process.env.GEMINI_API_KEY    ? '✅' : '❌ manquante'}`);
+  console.log(`    Groq (fallback):${process.env.GROQ_API_KEY      ? '✅' : '⚠️  optionnelle'}`);
+  console.log(`    Claude (Victor):${process.env.ANTHROPIC_API_KEY ? '✅' : '❌ manquante'}`);
+  console.log(`    Odds API:       ${process.env.ODDS_API_KEY      ? '✅' : '⚠️  optionnelle'}`);
+  console.log(`    Football-Data:  ${process.env.FOOTBALL_DATA_KEY ? '✅' : '⚠️  optionnelle'}`);
+  console.log(`    API-Football:   ${process.env.RAPIDAPI_KEY      ? '✅' : '⚠️  optionnelle'}`);
+  console.log(`    PostgreSQL:     ${process.env.DATABASE_URL      ? '✅' : '❌ manquante'}`);
+  console.log(`    Telegram:       ${process.env.TELEGRAM_BOT_TOKEN ? '✅' : '⚠️  optionnelle'}\n`);
+
+  // Démarrage du scheduler Victor
+  startScheduler();
+  console.log('🎙️  PronoSight v4.1 — Victor opérationnel\n');
 });
