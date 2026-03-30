@@ -15,6 +15,10 @@ import { callClaude, callGemini, extractText, extractJSON, tsdbFetch, getLeagueE
 let _deferredPrompt = null;
 let parlayCount = 0;
 let _histFilter = { result: 'all', search: '' };
+let _histMode = 'victor'; // 'victor' | 'personal'
+
+// Victor IA — cache des données chargées au boot
+const victorState = { today: null, stats: null, patterns: null, history: null, loading: false, loaded: false };
 
 // ══════════════════════════════════════════════
 // INITIALISATION
@@ -54,6 +58,8 @@ async function initApp() {
   showStep(1);
   updateHistBadge();
   renderDashboard();
+  // Charge les données Victor en arrière-plan, re-render dashboard quand prêt
+  loadVictorData().then(() => renderDashboard());
   // Scan auto toutes les 3h si notifications activées
   autoScanAlerts();
   setInterval(autoScanAlerts, 3 * 60 * 60 * 1000);
@@ -96,16 +102,17 @@ function showStep(n) {
 function switchNav(tab) {
   const pv = document.getElementById('pronoView');
   if (pv) pv.style.display = tab === 'prono' ? 'block' : 'none';
-  ['history','parlay','alerts','bankroll','quickpick','combo','dash','live','today'].forEach(t => {
+  ['history','parlay','alerts','bankroll','quickpick','combo','dash','live','today','victor'].forEach(t => {
     const el = document.getElementById(t + 'View');
     if (el) el.classList.toggle('visible', t === tab);
   });
-  ['prono','history','parlay','alerts','bankroll','quickpick','combo','dash','live','today'].forEach(t => {
+  ['prono','history','parlay','alerts','bankroll','quickpick','combo','dash','live','today','victor'].forEach(t => {
     const b = document.getElementById('nav-' + t);
     if (b) b.classList.toggle('active', t === tab);
   });
   if (tab === 'history') renderHistory();
   if (tab === 'dash') renderDashboard();
+  if (tab === 'victor') renderVictorView();
   if (tab === 'live') { fetchLive(false); startLiveAutoRefresh(); } else stopLiveAutoRefresh();
   if (tab === 'today') fetchTodayMatches(false);
   if (tab === 'alerts') renderAlertFavs();
@@ -992,6 +999,56 @@ function exportCSV() {
 window.exportCSV = exportCSV;
 
 function renderHistory() {
+  // MOD 4 — Victor mode check (auto-bascule sur perso si Victor vide)
+  const victorPicks = victorState.loaded ? (victorState.history?.pronostics || []) : [];
+  const hasVictor   = victorPicks.length > 0;
+  if (!hasVictor) _histMode = 'personal';
+
+  if (_histMode === 'victor' && hasVictor) {
+    const vH = victorState.history;
+    document.getElementById('hTotal').textContent  = vH.total || 0;
+    document.getElementById('hWins').textContent   = vH.corrects || 0;
+    document.getElementById('hLoses').textContent  = Math.max(0, (vH.total || 0) - (vH.corrects || 0));
+    document.getElementById('hRate').textContent   = vH.taux != null ? vH.taux + '%' : '—';
+    const pnlEl = document.getElementById('hPnl');   if (pnlEl)  { pnlEl.textContent  = '—'; pnlEl.style.color  = '#888'; }
+    const confEl = document.getElementById('hAvgConf'); if (confEl) confEl.textContent = '—';
+    const leagueEl = document.getElementById('hLeagueStats');
+    if (leagueEl) leagueEl.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="hist-filter-btn active" onclick="window._setHistMode('victor')">🎙️ Victor</button>
+      <button class="hist-filter-btn" onclick="window._setHistMode('personal')">👤 Personnel</button></div>`;
+    const list = document.getElementById('histList');
+    const q = (_histFilter.search || '').toLowerCase();
+    const filtered = victorPicks.filter(p => {
+      const r = p.pronostic_correct === true ? 'win' : p.pronostic_correct === false ? 'lose' : 'pending';
+      if (_histFilter.result !== 'all' && r !== _histFilter.result) return false;
+      if (q && ![(p.equipe_a||''),(p.equipe_b||''),(p.sport||'')].some(s => s.toLowerCase().includes(q))) return false;
+      return true;
+    });
+    if (!filtered.length) { list.innerHTML = '<div class="hist-empty">🔍 Aucun résultat Victor pour ce filtre</div>'; return; }
+    list.innerHTML = filtered.map(p => {
+      const correct = p.pronostic_correct;
+      const cls = correct === true ? 'hist-win' : correct === false ? 'hist-lose' : '';
+      const badge = correct === true ? '✅' : correct === false ? '❌' : '⏳';
+      const confColor = p.confiance === 'Élevé' ? '#00dd55' : p.confiance === 'Moyen' ? '#ffcc00' : '#ff6644';
+      return `<div class="hist-card ${cls}">
+        <div style="flex:1">
+          <div style="font-weight:700;font-size:14px">${p.equipe_a||''} vs ${p.equipe_b||''}</div>
+          <div style="font-size:10px;color:var(--muted)">${p.sport||''} · ${p.competition||''}</div>
+          <div style="font-size:12px;color:var(--accent);margin-top:4px">🎯 ${p.pronostic_principal||''}</div>
+          ${p.value_bet ? `<div style="font-size:11px;color:#00aaff;margin-top:2px">💡 ${p.value_bet}</div>` : ''}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          <div style="font-size:22px">${badge}</div>
+          <div style="font-size:10px;color:var(--muted)">${p.date||''}</div>
+          ${p.cote_estimee ? `<div style="font-size:11px;font-weight:700;color:var(--accent)">@${parseFloat(p.cote_estimee).toFixed(2)}</div>` : ''}
+          <div style="font-size:10px;font-weight:700;color:${confColor}">${p.confiance||''}</div>
+        </div>
+      </div>`;
+    }).join('');
+    return;
+  }
+
+  // ── Mode personnel (historique localStorage) ──
   const h = getHist();
   const res = h.filter(x => x.result !== 'pending');
   const wins = res.filter(x => x.result === 'win').length;
@@ -1013,7 +1070,7 @@ function renderHistory() {
   const confEl = document.getElementById('hAvgConf');
   if (confEl) confEl.textContent = avgConf ? avgConf + '%' : '—';
 
-  // Stats par ligue
+  // Stats par ligue (+ toggle si Victor disponible)
   const leagueEl = document.getElementById('hLeagueStats');
   if (leagueEl) {
     const byLeague = {};
@@ -1025,7 +1082,10 @@ function renderHistory() {
       else if (x.result === 'lose') byLeague[k].loses++;
     });
     const sorted = Object.entries(byLeague).sort((a, b) => b[1].total - a[1].total).slice(0, 5);
-    leagueEl.innerHTML = sorted.length ? sorted.map(([league, s]) => {
+    const toggleHtml = hasVictor ? `<div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="hist-filter-btn" onclick="window._setHistMode('victor')">🎙️ Victor</button>
+      <button class="hist-filter-btn active" onclick="window._setHistMode('personal')">👤 Personnel</button></div>` : '';
+    leagueEl.innerHTML = toggleHtml + (sorted.length ? sorted.map(([league, s]) => {
       const wr = s.wins + s.loses > 0 ? Math.round(s.wins / (s.wins + s.loses) * 100) : null;
       const col = wr === null ? '#888' : wr >= 60 ? '#00dd55' : wr >= 40 ? '#ffcc00' : '#ff3333';
       return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">
@@ -1033,7 +1093,7 @@ function renderHistory() {
         <div style="color:var(--muted)">${s.total} analyses</div>
         <div style="font-weight:700;color:${col};min-width:36px;text-align:right">${wr !== null ? wr + '%' : '—'}</div>
       </div>`;
-    }).join('') : '';
+    }).join('') : '');
   }
 
   const list = document.getElementById('histList');
@@ -1129,11 +1189,47 @@ function renderDashboard() {
     }
   }
 
+  // MOD 3 — Stats Victor (override si données disponibles)
+  if (victorState.loaded && victorState.stats?.global?.total > 0) {
+    const vg = victorState.stats.global;
+    if (el2) el2.textContent = (vg.taux_global || 0) + '%';
+    const vRoi = victorState.stats.derniere_maj?.roi_mise_fixe;
+    if (el3 && vRoi != null) { el3.textContent = (vRoi >= 0 ? '+' : '') + vRoi + 'u'; el3.style.color = vRoi >= 0 ? '#00dd55' : '#ff3333'; }
+    // Série depuis Victor history
+    const vPicks = victorState.history?.pronostics || [];
+    let vStreak = 0, vSType = '';
+    for (const vp of vPicks) {
+      const vr = vp.pronostic_correct === true ? 'win' : vp.pronostic_correct === false ? 'lose' : null;
+      if (!vr) continue;
+      if (!vSType) vSType = vr;
+      if (vr === vSType) vStreak++; else break;
+    }
+    if (el4 && vStreak > 0) {
+      const vWin = vSType === 'win';
+      el4.textContent = (vWin ? '🔥 ' : '💀 ') + vStreak + (vWin ? 'W' : 'L');
+      el4.style.color = vWin ? '#00dd55' : '#ff3333';
+      if (el4b) { el4b.style.background = vWin ? '#00dd55' : '#ff3333'; el4b.style.width = Math.min(100, vStreak * 15) + '%'; }
+    }
+  }
+
+  // MOD 1 — Derniers picks : Victor en priorité, perso en fallback
   const rp = document.getElementById('dashRecentPicks');
   if (rp) {
-    if (!hist.length) {
-      rp.innerHTML = '<div class="dash-empty">Aucun pari encore<br><button class="dash-cta" onclick="switchNav(\'prono\')">🔮 Analyser un match</button></div>';
-    } else {
+    const victorPicksToday = victorState.loaded ? (victorState.today?.pronostics || []) : [];
+    if (victorPicksToday.length > 0) {
+      rp.onclick = null;
+      rp.innerHTML = victorPicksToday.slice(0, 5).map(p => {
+        const confColor = p.confiance === 'Élevé' ? '#00dd55' : p.confiance === 'Moyen' ? '#ffcc00' : '#ff6644';
+        const confArrow = p.confiance === 'Élevé' ? '↑↑' : p.confiance === 'Moyen' ? '↑' : '→';
+        return `<div class="dash-pick-row" onclick="switchNav('victor')" style="cursor:pointer">
+          <div class="dash-pick-result" style="background:${confColor};color:#000;font-size:10px;font-weight:800;min-width:28px;text-align:center;padding:0 4px">${confArrow}</div>
+          <div style="flex:1">
+            <div class="dash-pick-match">${p.equipe_a || ''} vs ${p.equipe_b || ''}</div>
+            <div class="dash-pick-league">🎯 ${p.pronostic_principal || ''} · ${p.sport || ''}</div>
+          </div>
+        </div>`;
+      }).join('') + `<div style="text-align:center;padding:8px 0 2px;font-size:11px;color:var(--muted);cursor:pointer" onclick="switchNav('victor')">🎙️ Voir l'analyse complète →</div>`;
+    } else if (hist.length) {
       rp.innerHTML = hist.slice(0, 5).map(h => {
         const rc = h.result === 'win' ? 'win' : h.result === 'lose' ? 'loss' : 'pending';
         return `<div class="dash-pick-row"><div class="dash-pick-result ${rc}">${h.result === 'win' ? 'W' : h.result === 'lose' ? 'L' : '?'}</div>
@@ -1141,6 +1237,8 @@ function renderDashboard() {
           <div class="dash-pick-league">${h.best_bet || ''} | ${h.league || ''}</div></div></div>`;
       }).join('');
       rp.onclick = () => switchNav('history');
+    } else {
+      rp.innerHTML = '<div class="dash-empty">Aucun pick encore<br><button class="dash-cta" onclick="switchNav(\'victor\')">🎙️ Voir Victor</button></div>';
     }
   }
 
@@ -1603,36 +1701,156 @@ function calcParlay() {
 }
 
 // ══════════════════════════════════════════════
+// VICTOR IA — Intégration frontend
+// ══════════════════════════════════════════════
+
+async function loadVictorData() {
+  if (victorState.loading) return;
+  victorState.loading = true;
+  try {
+    const [todayRes, statsRes, patternsRes, historyRes] = await Promise.all([
+      fetch('/api/victor/today').then(r => r.json()),
+      fetch('/api/victor/stats').then(r => r.json()),
+      fetch('/api/victor/patterns').then(r => r.json()),
+      fetch('/api/victor/history?days=30').then(r => r.json())
+    ]);
+    victorState.today    = todayRes;
+    victorState.stats    = statsRes;
+    victorState.patterns = patternsRes;
+    victorState.history  = historyRes;
+    victorState.loaded   = true;
+  } catch(e) {
+    console.warn('[Victor] Données indisponibles:', e.message);
+  } finally {
+    victorState.loading = false;
+  }
+}
+
+function renderVictorPicks(picks, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!picks || !picks.length) {
+    const h = new Date().getHours();
+    const msg = h < 7
+      ? `Pronostics disponibles à 07h00 (dans ${7 - h}h)`
+      : h < 13 ? 'Run du matin disponible — prochain refresh à 13h00' : 'Prochain run à 07h00 demain';
+    el.innerHTML = `<div style="text-align:center;padding:36px;color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:12px">
+      <div style="font-size:28px;margin-bottom:8px">🎙️</div>
+      <strong style="color:var(--text2);font-size:13px">Victor analyse en cours...</strong><br>
+      <span style="font-size:11px;margin-top:6px;display:block">${msg}</span>
+    </div>`;
+    return;
+  }
+  el.innerHTML = picks.map((p, i) => {
+    const confColor = p.confiance === 'Élevé' ? '#00dd55' : p.confiance === 'Moyen' ? '#ffcc00' : '#ff6644';
+    const confNum   = p.confiance === 'Élevé' ? 85 : p.confiance === 'Moyen' ? 70 : 55;
+    return `<div class="qp-card${i === 0 ? ' top-pick' : ''}">
+      ${i === 0 ? '<div class="qp-card-badge">🎙️ VICTOR TOP PICK</div>' : ''}
+      <div class="qp-card-match">${p.equipe_a || ''} vs ${p.equipe_b || ''}</div>
+      <div class="qp-card-league">${p.sport || ''} · ${p.competition || ''}</div>
+      <div class="qp-card-bet">🎯 ${p.pronostic_principal || ''}</div>
+      <div class="qp-card-stats">
+        <span class="qp-chip" style="color:${confColor}">${confNum}% · ${p.confiance || ''}</span>
+        ${p.cote_estimee ? `<span class="qp-chip">@${parseFloat(p.cote_estimee).toFixed(2)}</span>` : ''}
+        ${p.value_bet ? `<span class="qp-chip" style="color:#00aaff">💡 ${p.value_bet}</span>` : ''}
+      </div>
+      ${p.score_predit ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">🏟️ Score prédit : <strong>${p.score_predit}</strong></div>` : ''}
+      ${p.phrase_signature ? `<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:6px;border-top:1px solid var(--border);padding-top:6px">"${p.phrase_signature}"</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderVictorView() {
+  const el = document.getElementById('victorView');
+  if (!el) return;
+  if (!victorState.loaded) {
+    el.innerHTML = `<div class="card"><div style="text-align:center;padding:40px;color:var(--muted)">
+      <div style="font-size:32px">🎙️</div>
+      <div style="margin-top:12px;font-weight:700;color:var(--text2)">Chargement de Victor...</div>
+    </div></div>`;
+    loadVictorData().then(() => renderVictorView());
+    return;
+  }
+  const picks    = victorState.today?.pronostics || [];
+  const g        = victorState.stats?.global || {};
+  const patterns = victorState.patterns?.forts || [];
+  const taux     = g.taux_global != null ? g.taux_global + '%' : '—';
+  const roi      = victorState.stats?.derniere_maj?.roi_mise_fixe != null
+    ? (victorState.stats.derniere_maj.roi_mise_fixe >= 0 ? '+' : '') + victorState.stats.derniere_maj.roi_mise_fixe + 'u'
+    : '—';
+  const totalVerif = g.total || 0;
+  const updateTime = victorState.today?.generated_at
+    ? new Date(victorState.today.generated_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+    : null;
+  const signature = picks[0]?.phrase_signature || '';
+
+  el.innerHTML = `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div>
+          <div class="card-title">🎙️ <span class="ct-accent">Victor</span> — Analyse du jour</div>
+          ${updateTime ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">Dernière mise à jour : ${updateTime}</div>` : '<div style="font-size:11px;color:var(--muted);margin-top:2px">Aucune analyse aujourd\'hui</div>'}
+        </div>
+        <button class="qp-scan-btn" onclick="refreshVictorView()" style="font-size:11px;padding:8px 14px">🔄 Actualiser</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+          <div style="font-size:20px;font-weight:800;color:#00dd55">${taux}</div>
+          <div style="font-size:9px;color:var(--muted);letter-spacing:1px;margin-top:3px">WIN RATE</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+          <div style="font-size:20px;font-weight:800;color:#00aaff">${roi}</div>
+          <div style="font-size:9px;color:var(--muted);letter-spacing:1px;margin-top:3px">ROI</div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center">
+          <div style="font-size:20px;font-weight:800;color:var(--yellow)">${totalVerif}</div>
+          <div style="font-size:9px;color:var(--muted);letter-spacing:1px;margin-top:3px">VÉRIFIÉS</div>
+        </div>
+      </div>
+      ${signature ? `<div style="background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:16px;font-size:13px;font-style:italic;color:var(--text2)">"${signature}"</div>` : ''}
+      <div style="font-size:10px;letter-spacing:2px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:10px">PICKS DU JOUR (${picks.length})</div>
+      <div id="victorPicksList"></div>
+    </div>
+    ${patterns.length ? `<div class="card" style="margin-top:12px">
+      <div style="font-size:10px;letter-spacing:2px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px">⚡ PATTERNS ACTIFS — FIABILITÉ ≥70%</div>
+      ${patterns.map(p => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <div style="flex:1">
+          <div style="font-weight:600;color:var(--text1)">${p.nom || ''}</div>
+          <div style="color:var(--muted);font-size:11px;margin-top:2px">${(p.description || '').slice(0, 90)}</div>
+        </div>
+        <div style="font-weight:800;color:#00dd55;font-size:16px">${parseFloat(p.taux_confirmation || 0).toFixed(0)}%</div>
+      </div>`).join('')}
+    </div>` : ''}
+  `;
+  renderVictorPicks(picks, 'victorPicksList');
+}
+
+async function refreshVictorView() {
+  victorState.loaded = false;
+  await loadVictorData();
+  renderVictorView();
+}
+window.refreshVictorView = refreshVictorView;
+
+function _setHistMode(mode) { _histMode = mode; renderHistory(); }
+window._setHistMode = _setHistMode;
+
+// ══════════════════════════════════════════════
 // QUICK PICK
 // ══════════════════════════════════════════════
 async function runQuickPick() {
   const btn = document.getElementById('qpScanBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Scan...'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ Chargement...'; }
   const resDiv = document.getElementById('qpResults');
-  resDiv.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-size:12px">🔍 Recherche...</div>';
-  const favs = getFavs();
-  const leagueNames = favs.length
-    ? LEAGUES.filter(l => favs.includes(l.id)).map(l => l.name + ' (' + l.country + ')').join(', ')
-    : 'Ligue 1, Premier League, La Liga, Champions League, NBA';
+  resDiv.innerHTML = '<div style="text-align:center;padding:32px;color:var(--muted);font-size:12px">🎙️ Récupération des picks Victor...</div>';
   try {
-    const data = await callGemini([{
-      role: 'user',
-      content: `Date: ${new Date().toLocaleDateString('fr-FR')}. Matchs du jour et demain dans: ${leagueNames}. FRANCAIS. JSON: {"picks":[{"league":"x","team1":"x","team2":"x","date":"JJ/MM","best_bet":"x","confidence":75,"odds":1.85,"reason":"phrase"}]} Max 8, triés par confiance, >= 60%.`
-    }], { useSearch: true, maxTokens: 1200 });
-    const picks = extractJSON(extractText(data))?.picks || [];
-    resDiv.innerHTML = picks.length
-      ? picks.map((p, i) => `<div class="qp-card${i === 0 ? ' top-pick' : ''}">
-          ${i === 0 ? '<div class="qp-card-badge">🏆 TOP PICK</div>' : ''}
-          <div class="qp-card-match">${p.team1} vs ${p.team2}</div>
-          <div class="qp-card-league">${p.league} · ${p.date}</div>
-          <div class="qp-card-bet">🎯 ${p.best_bet}</div>
-          <div class="qp-card-stats"><span class="qp-chip" style="color:${p.confidence >= 75 ? '#00dd55' : '#ffcc00'}">${p.confidence}%</span>${p.odds ? `<span class="qp-chip">@${p.odds}</span>` : ''}</div>
-        </div>`).join('')
-      : '<div style="text-align:center;padding:30px;color:var(--muted)">Aucun pick. Réessaie plus tard.</div>';
+    if (!victorState.loaded) await loadVictorData();
+    const picks = victorState.today?.pronostics || [];
+    renderVictorPicks(picks, 'qpResults');
   } catch (e) {
     resDiv.innerHTML = `<div style="color:var(--ev-neg);padding:12px">${e.message}</div>`;
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '🔍 SCANNER'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#x1F50D; SCANNER'; }
   }
 }
 

@@ -42,6 +42,7 @@
   <button class="nav-btn" id="nav-alerts" onclick="switchNav('alerts')">&#x1F514; Alertes</button>
   <button class="nav-btn" id="nav-live" onclick="switchNav('live')">&#x1F534; Live</button>
   <button class="nav-btn" id="nav-today" onclick="switchNav('today')">&#x1F4C5; Aujourd'hui</button>
+  <button class="nav-btn" id="nav-victor" onclick="switchNav('victor')">&#x1F399;&#xFE0F; Victor</button>
   <button class="nav-btn" id="nav-history" onclick="switchNav('history')">&#x1F4CB; Historique <span class="nav-badge" id="histBadge">0</span></button>
 </div>
 <div class="combo-panel visible" id="dashView">
@@ -203,6 +204,15 @@
   <button class="alert-scan-btn" id="alertScanBtn" onclick="scanAlerts()">&#x1F50D; SCANNER MES LIGUES</button>
   <div id="alertResults"></div>
 </div></div>
+
+<div class="combo-panel" id="victorView">
+  <div class="card">
+    <div style="text-align:center;padding:40px;color:var(--muted)">
+      <div style="font-size:32px">&#x1F399;&#xFE0F;</div>
+      <div style="margin-top:12px;font-weight:700;color:var(--text2)">Chargement de Victor...</div>
+    </div>
+  </div>
+</div>
 
 <div class="history-panel" id="historyView">
   <div class="hist-stats">
