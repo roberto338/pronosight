@@ -119,6 +119,7 @@ function switchNav(tab) {
   if (tab === 'history') renderHistory();
   if (tab === 'dash') renderDashboard();
   if (tab === 'victor') renderVictorView();
+  if (tab === 'prono') renderPronoVictor();
   if (tab === 'live') { fetchLive(false); startLiveAutoRefresh(); } else stopLiveAutoRefresh();
   if (tab === 'today') fetchTodayMatches(false);
   if (tab === 'alerts') renderAlertFavs();
@@ -1707,6 +1708,200 @@ function calcParlay() {
 }
 
 // ══════════════════════════════════════════════
+// ONGLET PRONOSTICS — Alimenté par Victor
+// ══════════════════════════════════════════════
+
+let _pronoSportFilter = 'all';
+
+const SPORT_EMOJIS = {
+  football: '⚽', soccer: '⚽',
+  basketball: '🏀', basket: '🏀',
+  tennis: '🎾',
+  mma: '🥊', boxe: '🥊', boxing: '🥊',
+  f1: '🏎️', formule1: '🏎️', motorsport: '🏎️',
+  rugby: '🏉', handball: '🤾', volleyball: '🏐',
+  cyclisme: '🚴', golf: '⛳', snooker: '🎱',
+};
+
+function _getSportEmoji(sport) {
+  if (!sport) return '🏆';
+  const key = sport.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return SPORT_EMOJIS[key] || SPORT_EMOJIS[sport.toLowerCase()] || '🏆';
+}
+
+function _normalizeSport(sport) {
+  if (!sport) return 'autre';
+  const s = sport.toLowerCase();
+  if (s.includes('foot') || s.includes('soccer')) return 'football';
+  if (s.includes('basket') || s === 'nba') return 'basketball';
+  if (s.includes('tennis')) return 'tennis';
+  if (s.includes('mma') || s.includes('box')) return 'mma';
+  if (s.includes('f1') || s.includes('formule') || s.includes('motor')) return 'f1';
+  return 'autre';
+}
+
+function filterProno(sport, btn) {
+  _pronoSportFilter = sport;
+  document.querySelectorAll('#pronoSportTabs .tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  _renderPronoList();
+}
+window.filterProno = filterProno;
+
+function renderPronoVictor() {
+  const container = document.getElementById('pronoVictorContent');
+  if (!container) return;
+
+  if (!victorState.loaded) {
+    container.innerHTML = `<div class="card"><div style="text-align:center;padding:40px;color:var(--muted)">
+      <div style="font-size:32px">🎙️</div>
+      <div style="margin-top:10px;font-weight:700;color:var(--text2)">Chargement des pronostics Victor...</div>
+    </div></div>`;
+    loadVictorData().then(() => renderPronoVictor());
+    return;
+  }
+  _renderPronoList();
+}
+window.renderPronoVictor = renderPronoVictor;
+
+function _renderPronoList() {
+  const container = document.getElementById('pronoVictorContent');
+  if (!container) return;
+
+  const allPicks = victorState.today?.pronostics || [];
+  const updateTime = victorState.today?.generated_at
+    ? new Date(victorState.today.generated_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  if (!allPicks.length) {
+    const h = new Date().getHours();
+    const nextRun = h < 7 ? '07h00' : h < 13 ? '13h00' : '07h00 demain';
+    container.innerHTML = `<div class="card">
+      <div style="text-align:center;padding:40px">
+        <div style="font-size:40px">🎙️</div>
+        <div style="margin-top:12px;font-size:16px;font-weight:800;color:var(--text1)">Victor analyse en cours...</div>
+        <div style="margin-top:6px;font-size:13px;color:var(--muted)">Prochaine analyse à ${nextRun}</div>
+        <button onclick="forceVictorRefresh()" style="margin-top:18px;background:var(--accent);color:#000;border:none;border-radius:10px;padding:10px 22px;font-weight:800;font-size:13px;cursor:pointer;font-family:'Exo 2',sans-serif;letter-spacing:1px">
+          ⚡ Forcer l'analyse
+        </button>
+      </div>
+    </div>`;
+    return;
+  }
+
+  // Filtrer par sport
+  const filtered = _pronoSportFilter === 'all'
+    ? allPicks
+    : allPicks.filter(p => _normalizeSport(p.sport) === _pronoSportFilter);
+
+  // Grouper par sport
+  const bySport = {};
+  filtered.forEach(p => {
+    const sportKey = _normalizeSport(p.sport);
+    const label = p.sport || 'Autres';
+    if (!bySport[sportKey]) bySport[sportKey] = { label, picks: [] };
+    bySport[sportKey].picks.push(p);
+  });
+
+  const headerHtml = `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0 12px;flex-wrap:wrap;gap:6px">
+    <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace">
+      🎙️ VICTOR · ${allPicks.length} PRONOSTIC${allPicks.length > 1 ? 'S' : ''}
+      ${updateTime ? `· <span style="opacity:.7">🔄 ${updateTime}</span>` : ''}
+    </div>
+    <button onclick="refreshPronoVictor()" style="background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:'JetBrains Mono',monospace">🔄 Actualiser</button>
+  </div>`;
+
+  if (!filtered.length) {
+    container.innerHTML = headerHtml + `<div class="card"><div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">
+      Aucun pronostic pour ce sport aujourd'hui.
+    </div></div>`;
+    return;
+  }
+
+  const groupsHtml = Object.entries(bySport).map(([sportKey, { label, picks }]) => {
+    const emoji = _getSportEmoji(label);
+    // Grouper par compétition dans chaque sport
+    const byComp = {};
+    picks.forEach(p => {
+      const comp = p.competition || 'Autre';
+      if (!byComp[comp]) byComp[comp] = [];
+      byComp[comp].push(p);
+    });
+
+    const compsHtml = Object.entries(byComp).map(([comp, cPicks]) => {
+      const picksHtml = cPicks.map(p => {
+        const confColor = p.confiance === 'Élevé' ? '#00dd55' : p.confiance === 'Moyen' ? '#ffcc00' : '#ff6644';
+        const confBg    = p.confiance === 'Élevé' ? 'rgba(0,221,85,.12)' : p.confiance === 'Moyen' ? 'rgba(255,204,0,.12)' : 'rgba(255,102,68,.12)';
+        return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
+            <div style="flex:1;min-width:0">
+              ${p.heure ? `<div style="font-size:10px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:4px">🕐 ${p.heure}</div>` : ''}
+              <div style="font-weight:800;font-size:15px;color:var(--text1);margin-bottom:6px">${p.equipe_a || ''} <span style="color:var(--muted);font-weight:400">vs</span> ${p.equipe_b || ''}</div>
+              <div style="background:var(--accent);color:#000;display:inline-block;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:800;margin-bottom:8px">
+                🎯 ${p.pronostic_principal || ''}${p.cote_estimee ? ` · @${parseFloat(p.cote_estimee).toFixed(2)}` : ''}
+              </div>
+              ${p.value_bet ? `<div style="font-size:11px;color:#00aaff;margin-bottom:4px">💡 Value : <strong>${p.value_bet}</strong>${p.cote_value ? ` @${parseFloat(p.cote_value).toFixed(2)}` : ''}</div>` : ''}
+              ${p.pari_a_eviter ? `<div style="font-size:11px;color:#ff6644;margin-bottom:4px">🚫 Éviter : ${p.pari_a_eviter}</div>` : ''}
+              ${p.score_predit ? `<div style="font-size:11px;color:var(--muted);margin-bottom:4px">🏟️ Score prédit : <strong style="color:var(--text2)">${p.score_predit}</strong></div>` : ''}
+              ${p.phrase_signature ? `<div style="font-size:11px;color:var(--muted);font-style:italic;border-top:1px solid var(--border);padding-top:8px;margin-top:6px">"${p.phrase_signature}"</div>` : ''}
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:60px">
+              <div style="background:${confBg};border:1px solid ${confColor};color:${confColor};border-radius:8px;padding:4px 10px;font-size:11px;font-weight:800;white-space:nowrap">${p.confiance || ''}</div>
+              ${p.enjeu ? `<div style="font-size:9px;color:var(--muted);text-align:right;max-width:80px;line-height:1.3">${p.enjeu.slice(0,50)}</div>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+      return `<div style="margin-bottom:8px">
+        <div style="font-size:10px;letter-spacing:2px;color:var(--muted);font-family:'JetBrains Mono',monospace;padding:8px 0 6px;border-bottom:1px solid var(--border);margin-bottom:10px">
+          📋 ${comp.toUpperCase()}
+        </div>
+        ${picksHtml}
+      </div>`;
+    }).join('');
+
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="font-size:13px;font-weight:800;letter-spacing:1px;color:var(--text1);margin-bottom:12px">
+        ${emoji} ${label.toUpperCase()} <span style="color:var(--muted);font-weight:400;font-size:11px">(${picks.length})</span>
+      </div>
+      ${compsHtml}
+    </div>`;
+  }).join('');
+
+  container.innerHTML = headerHtml + groupsHtml;
+}
+
+async function forceVictorRefresh() {
+  const apiKey = 'd8828503422f052ab9a0aef79183a3f2da24080f48eff58da83a3cbc85c441ca';
+  const btn = document.querySelector('#pronoVictorContent button');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Analyse en cours...'; }
+  try {
+    const r = await fetch('/api/victor/refresh', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey }
+    });
+    const d = await r.json();
+    if (r.ok) {
+      const container = document.getElementById('pronoVictorContent');
+      if (container) container.innerHTML = `<div class="card"><div style="text-align:center;padding:32px;color:var(--muted)">
+        <div style="font-size:32px">⚡</div>
+        <div style="margin-top:10px;font-weight:700;color:var(--text2)">Victor est en train d'analyser...</div>
+        <div style="margin-top:6px;font-size:12px">Résultats disponibles dans 30-60 secondes</div>
+      </div></div>`;
+      setTimeout(() => loadVictorData().then(() => renderPronoVictor()), 45000);
+    }
+  } catch(e) { console.warn('[forceVictorRefresh]', e.message); }
+}
+window.forceVictorRefresh = forceVictorRefresh;
+
+async function refreshPronoVictor() {
+  victorState.loaded = false;
+  await loadVictorData();
+  renderPronoVictor();
+}
+window.refreshPronoVictor = refreshPronoVictor;
+
 // VICTOR IA — Intégration frontend
 // ══════════════════════════════════════════════
 

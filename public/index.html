@@ -87,95 +87,20 @@
 </div>
 
 <div id="pronoView" style="display:none">
-<div class="sport-tabs">
-  <button class="tab active" data-sport="football" onclick="selectSport('football')">⚽ Football</button>
-  <button class="tab" data-sport="basket" onclick="selectSport('basket')">🏀 Basketball</button>
+
+<!-- Filtres sport -->
+<div class="sport-tabs" id="pronoSportTabs">
+  <button class="tab active" data-psport="all"       onclick="filterProno('all',this)">Tous</button>
+  <button class="tab"        data-psport="football"  onclick="filterProno('football',this)">⚽ Football</button>
+  <button class="tab"        data-psport="basketball"onclick="filterProno('basketball',this)">🏀 Basketball</button>
+  <button class="tab"        data-psport="tennis"    onclick="filterProno('tennis',this)">🎾 Tennis</button>
+  <button class="tab"        data-psport="mma"       onclick="filterProno('mma',this)">🥊 MMA</button>
+  <button class="tab"        data-psport="f1"        onclick="filterProno('f1',this)">🏎️ F1</button>
+  <button class="tab"        data-psport="autre"     onclick="filterProno('autre',this)">Autres</button>
 </div>
 
-<div class="steps-bar">
-  <div class="step-item"><div class="step-num active" id="s1n">1</div><div class="step-label active" id="s1l">Ligue</div></div>
-  <div class="step-line"></div>
-  <div class="step-item"><div class="step-num" id="s2n">2</div><div class="step-label" id="s2l">Match</div></div>
-  <div class="step-line"></div>
-  <div class="step-item"><div class="step-num" id="s3n">3</div><div class="step-label" id="s3l">Analyse</div></div>
-</div>
-
-<!-- STEP 1 -->
-<div id="step1panel">
-  <div class="card">
-    <div class="card-title">🏆 <span class="ct-accent">Étape 1</span> — Choisis ta ligue</div>
-    <input class="league-search" id="leagueSearch" type="text" placeholder="🔍 Rechercher... (Ligue 1, NBA, Serie A, Botola...)" oninput="filterLeagues()">
-    <div class="league-categories" id="leagueCats"></div>
-    <div class="leagues-grid" id="leaguesGrid"></div>
-  </div>
-</div>
-
-<!-- STEP 2 -->
-<div id="step2panel" style="display:none">
-  <div class="card">
-    <div class="card-title">📅 <span class="ct-accent">Étape 2</span> — Choisis le match</div>
-    <div id="matchesContainer"><div class="match-loading"><div class="mini-spinner"></div>Chargement des matchs...</div></div>
-    <div class="or-divider">OU SAISIR</div>
-    <div class="manual-row">
-      <input class="team-input" id="team1" type="text" placeholder="Équipe domicile">
-      <div class="vs-badge">VS</div>
-      <input class="team-input" id="team2" type="text" placeholder="Équipe extérieur">
-    </div>
-
-    <div class="cup-leg-row" id="cupLegRow">
-      <div class="cup-leg-label">&#x1F3C6; Score match aller</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input id="leg1Score" class="ev-input" type="text" placeholder="ex: 4-0" style="max-width:110px">
-        <span style="font-size:11px;color:var(--muted)">Laisse vide si inconnu</span>
-      </div>
-    </div>
-    <!-- EV INPUT -->
-    <div class="ev-row">
-      <div class="ev-row-label">💰 Pari à Valeur (EV+)</div>
-      <div class="ev-inputs">
-        <div class="ev-field">
-          <label>Cote bookmaker</label>
-          <input class="ev-input" id="evOdds" type="number" step="0.01" min="1" placeholder="ex: 2.10">
-        </div>
-        <div class="ev-field">
-          <label>Marché (1=dom / X=nul / 2=ext)</label>
-          <input class="ev-input" id="evMarket" type="text" placeholder="ex: 1, X, 2, Over 2.5">
-        </div>
-      </div>
-    </div>
-
-    <!-- KELLY INPUT -->
-    <div class="kelly-row">
-      <div class="kelly-label">📊 Mise Kelly</div>
-      <div class="ev-inputs">
-        <div class="kelly-field">
-          <label>Ma bankroll (€)</label>
-          <input class="kelly-input" id="kellyBankroll" type="number" min="1" placeholder="ex: 500">
-        </div>
-        <div class="kelly-field">
-          <label>Fraction Kelly (0.25 conseillé)</label>
-          <input class="kelly-input" id="kellyFraction" type="number" step="0.05" min="0.05" max="1" value="0.25" placeholder="0.25">
-        </div>
-      </div>
-    </div>
-  </div>
-  <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">⚡ <span>ANALYSER CE MATCH</span></button>
-</div>
-
-<div class="error-box" id="errorBox"></div>
-
-<div class="loading" id="loading">
-  <div class="big-spinner" id="bigSpinner"></div>
-  <div class="loading-text">Analyse IA en cours...</div>
-  <div class="loading-steps">
-    <div class="loading-step" id="ls1">🔍 Recherche des données récentes...</div>
-    <div class="loading-step" id="ls2">📊 Calcul des probabilités...</div>
-    <div class="loading-step" id="ls3">💰 Calcul EV+ et mise optimale...</div>
-    <div class="loading-step" id="ls4">✅ Génération du rapport...</div>
-  </div>
-</div>
-
-<div class="results" id="results"></div>
+<!-- Contenu Victor -->
+<div id="pronoVictorContent"></div>
 
 </div><!-- /pronoView -->
 
