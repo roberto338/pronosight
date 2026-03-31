@@ -57,9 +57,6 @@ async function initApp() {
     else { akBtn.textContent = '❌ GEMINI'; akBtn.style.borderColor = '#ff3333'; akBtn.style.color = '#ff3333'; }
   }
 
-  renderCats();
-  renderLeagues();
-  showStep(1);
   updateHistBadge();
   renderDashboard();
   // Charge les données Victor immédiatement, re-render dashboard quand prêt
@@ -1482,13 +1479,16 @@ function filterToday(filter, btn) {
 function todayAnalyze(idx) {
   const m = state.todayData[idx];
   if (!m) return;
-  const league = LEAGUES.find(l => l.id === m.leagueId);
-  if (league) state.selectedLeague = league;
-  state.selectedMatch = m;
-  switchNav('prono');
-  document.getElementById('team1').value = m.team1;
-  document.getElementById('team2').value = m.team2;
-  showStep(2);
+  switchNav('victor');
+  const notif = document.getElementById('victorUpdateNotif');
+  if (!notif) {
+    const bar = document.createElement('div');
+    bar.id = 'victorUpdateNotif';
+    bar.className = 'victor-update-notif';
+    bar.innerHTML = `🎙️ Victor analyse <strong>${m.team1} vs ${m.team2}</strong> — consultez les pronostics ci-dessous`;
+    document.body.prepend(bar);
+    setTimeout(() => bar.remove(), 6000);
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -1590,10 +1590,15 @@ function renderLiveContent() {
 function filterLive() { state.liveFilter = document.getElementById('liveSportFilter').value || 'all'; renderLiveContent(); }
 
 function prefillFromLive(t1, t2) {
-  switchNav('prono');
-  document.getElementById('team1').value = t1;
-  document.getElementById('team2').value = t2;
-  showStep(2);
+  switchNav('victor');
+  const existing = document.getElementById('victorUpdateNotif');
+  if (existing) existing.remove();
+  const bar = document.createElement('div');
+  bar.id = 'victorUpdateNotif';
+  bar.className = 'victor-update-notif';
+  bar.innerHTML = `🎙️ Victor analyse <strong>${t1} vs ${t2}</strong> — consultez les pronostics ci-dessous`;
+  document.body.prepend(bar);
+  setTimeout(() => bar.remove(), 6000);
 }
 
 function saveLiveKey() { 
