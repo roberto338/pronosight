@@ -2,7 +2,8 @@
 // victor/core.js — Cerveau de Victor
 // ══════════════════════════════════════════════
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ override: true });
 import { query } from '../db/database.js';
 import { VICTOR_PROMPT } from './prompt.js';
 import { detectPatterns, formatPatternsForVictor } from './patterns.js';
@@ -268,7 +269,24 @@ ${briefing}
 
 ${patternsTexte}
 
-Lance l'analyse complète. Réponds UNIQUEMENT avec ce JSON :
+CONTEXTE URGENT — FENÊTRE FIFA ACTIVE :
+Aujourd'hui ${dateStr} des dizaines de matchs internationaux se jouent partout dans le monde :
+- Qualifications Coupe du Monde 2026 UEFA
+- Qualifications Coupe du Monde 2026 CONMEBOL
+- Qualifications Coupe du Monde 2026 CONCACAF
+- Qualifications Coupe du Monde 2026 CAF
+- Matchs amicaux internationaux A
+
+Recherche avec ces requêtes web OBLIGATOIRES :
+1. "qualifications coupe du monde 2026 ${dateStr}"
+2. "World Cup 2026 qualifiers ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Europe/Paris' })}"
+3. "international friendlies ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Europe/Paris' })}"
+4. "matchs foot ce soir ${dateStr}"
+5. "football today ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Europe/Paris' })} all matches"
+
+Tu DOIS identifier au minimum 4 matchs. Un tableau vide n'est pas acceptable pendant une fenêtre FIFA.
+
+Lance l'analyse complète et retourne le JSON avec tous les matchs trouvés. Réponds UNIQUEMENT avec ce JSON :
 {
   "date": "YYYY-MM-DD",
   "generated_at": "HH:MM",

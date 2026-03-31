@@ -3,7 +3,8 @@
 // Usage : node victor/test.js
 // ══════════════════════════════════════════════
 
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ override: true });
 import { runVictor } from './core.js';
 import { detectPatterns, formatPatternsForVictor } from './patterns.js';
 
