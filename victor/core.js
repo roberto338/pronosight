@@ -284,7 +284,15 @@ Recherche avec ces requêtes web OBLIGATOIRES :
 4. "matchs foot ce soir ${dateStr}"
 5. "football today ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Europe/Paris' })} all matches"
 
-Tu DOIS identifier au minimum 4 matchs. Un tableau vide n'est pas acceptable pendant une fenêtre FIFA.
+Recherche aussi OBLIGATOIREMENT les matchs amicaux :
+6. "international friendlies tonight ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'Europe/Paris' })}"
+7. "matchs amicaux internationaux ce soir"
+8. "friendly football matches today"
+9. "amical international ${dateStr}"
+
+Les matchs amicaux sont aussi importants que les qualifications. Tu dois trouver TOUS les matchs du jour sans exception — qualifications ET amicaux ET championnats nationaux ET coupes continentales.
+
+Tu DOIS identifier au minimum 6 matchs. Un tableau avec seulement les barrages UEFA n'est pas acceptable — cherche TOUTES les compétitions actives aujourd'hui.
 
 Lance l'analyse complète et retourne le JSON avec tous les matchs trouvés. Réponds UNIQUEMENT avec ce JSON :
 {
