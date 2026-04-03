@@ -81,8 +81,9 @@ function selectSport(sport) {
   state.currentSport = sport;
   state.selectedLeague = null;
   state.selectedMatch = null;
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelector(`[data-sport="${sport}"]`)?.classList.add('active');
+  // N'affecte que les onglets sport dans la section manuelle (pas les onglets Victor/Manuel)
+  document.querySelectorAll('#pronoManuelSection .tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`#pronoManuelSection [data-sport="${sport}"]`)?.classList.add('active');
   const btn = document.getElementById('analyzeBtn');
   if (btn) btn.classList.toggle('bk-btn', sport === 'basket');
   document.getElementById('bigSpinner')?.classList.toggle('bk', sport === 'basket');
@@ -105,6 +106,30 @@ function showStep(n) {
     if (i < n) { num.classList.add('done'); num.textContent = '✓'; }
     else if (i === n) { num.classList.add('active'); num.textContent = i; lbl.classList.add('active'); }
     else num.textContent = i;
+  }
+}
+
+function switchPronoMode(mode, btn) {
+  // Toggle onglets Victor IA ↔ Analyse manuelle
+  const victorSection = document.getElementById('pronoVictorSection');
+  const manuelSection = document.getElementById('pronoManuelSection');
+  if (!victorSection || !manuelSection) return;
+
+  victorSection.style.display = mode === 'victor' ? 'block' : 'none';
+  manuelSection.style.display  = mode === 'manuel'  ? 'block' : 'none';
+
+  // Mise à jour des onglets actifs (uniquement les boutons pronoTab*)
+  ['pronoTabVictor','pronoTabManuel'].forEach(id => {
+    document.getElementById(id)?.classList.remove('active');
+  });
+  if (btn) btn.classList.add('active');
+
+  // Initialisation paresseuse : lance les ligues la première fois qu'on ouvre l'analyse manuelle
+  if (mode === 'manuel' && !manuelSection.dataset.initialized) {
+    manuelSection.dataset.initialized = 'true';
+    renderCats();
+    renderLeagues();
+    showStep(1);
   }
 }
 
@@ -2378,6 +2403,7 @@ document.addEventListener('keydown', e => {
 // ══════════════════════════════════════════════
 window.selectSport = selectSport;
 window.switchNav = switchNav;
+window.switchPronoMode = switchPronoMode;
 window.filterLeagues = filterLeagues;
 window.setCat = setCat;
 window.pickLeague = pickLeague;

@@ -88,19 +88,131 @@
 
 <div id="pronoView" style="display:none">
 
-<!-- Filtres sport -->
-<div class="sport-tabs" id="pronoSportTabs">
-  <button class="tab active" data-psport="all"       onclick="filterProno('all',this)">Tous</button>
-  <button class="tab"        data-psport="football"  onclick="filterProno('football',this)">⚽ Football</button>
-  <button class="tab"        data-psport="basketball"onclick="filterProno('basketball',this)">🏀 Basketball</button>
-  <button class="tab"        data-psport="tennis"    onclick="filterProno('tennis',this)">🎾 Tennis</button>
-  <button class="tab"        data-psport="mma"       onclick="filterProno('mma',this)">🥊 MMA</button>
-  <button class="tab"        data-psport="f1"        onclick="filterProno('f1',this)">🏎️ F1</button>
-  <button class="tab"        data-psport="autre"     onclick="filterProno('autre',this)">Autres</button>
+<!-- Toggle Victor / Manuel -->
+<div class="sport-tabs" style="margin-bottom:12px">
+  <button class="tab active" id="pronoTabVictor" onclick="switchPronoMode('victor',this)">🎙️ Victor IA</button>
+  <button class="tab"        id="pronoTabManuel" onclick="switchPronoMode('manuel',this)">🔍 Analyse manuelle</button>
 </div>
 
-<!-- Contenu Victor -->
-<div id="pronoVictorContent"></div>
+<!-- ── Section Victor ── -->
+<div id="pronoVictorSection">
+  <div class="sport-tabs" id="pronoSportTabs">
+    <button class="tab active" data-psport="all"        onclick="filterProno('all',this)">Tous</button>
+    <button class="tab"        data-psport="football"   onclick="filterProno('football',this)">⚽ Football</button>
+    <button class="tab"        data-psport="basketball" onclick="filterProno('basketball',this)">🏀 Basketball</button>
+    <button class="tab"        data-psport="tennis"     onclick="filterProno('tennis',this)">🎾 Tennis</button>
+    <button class="tab"        data-psport="mma"        onclick="filterProno('mma',this)">🥊 MMA</button>
+    <button class="tab"        data-psport="f1"         onclick="filterProno('f1',this)">🏎️ F1</button>
+    <button class="tab"        data-psport="autre"      onclick="filterProno('autre',this)">Autres</button>
+  </div>
+  <div id="pronoVictorContent"></div>
+</div>
+
+<!-- ── Section Analyse manuelle ── -->
+<div id="pronoManuelSection" style="display:none">
+
+  <!-- Sport tabs -->
+  <div class="sport-tabs">
+    <button class="tab active" data-sport="football"   onclick="selectSport('football')">⚽ Football</button>
+    <button class="tab"        data-sport="basket"     onclick="selectSport('basket')">🏀 Basketball</button>
+  </div>
+
+  <!-- Étape 1 : Sélection ligue -->
+  <div id="step1panel" class="card" style="margin-top:10px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <div class="step-num active" id="s1n">1</div>
+      <div style="font-size:12px;font-weight:700;letter-spacing:1px;color:var(--text2)" id="s1l">CHOISIS TA LIGUE</div>
+    </div>
+    <div id="leagueCats" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <input id="leagueSearch" class="kelly-input" placeholder="🔍 Rechercher... (Ligue 1, NBA, Serie A, Botola...)"
+           oninput="filterLeagues()" style="margin-bottom:10px;width:100%">
+    <div class="leagues-grid" id="leaguesGrid"></div>
+  </div>
+
+  <!-- Étape 2 : Match + analyse -->
+  <div id="step2panel" class="card" style="margin-top:10px;display:none">
+    <div style="display:flex;align-items:center;gap:18px;margin-bottom:14px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="step-num done" id="s2n">✓</div>
+        <div style="font-size:12px;color:var(--muted)" id="s2l">LIGUE SÉLECTIONNÉE</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="step-num active" id="s3n">2</div>
+        <div style="font-size:12px;font-weight:700;letter-spacing:1px;color:var(--text2)" id="s3l">MATCH &amp; ANALYSE</div>
+      </div>
+    </div>
+
+    <!-- Matchs disponibles -->
+    <div id="matchesContainer" style="margin-bottom:12px"></div>
+
+    <!-- Saisie équipes -->
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <input id="team1" class="kelly-input" placeholder="Équipe domicile" style="flex:1;min-width:130px">
+      <input id="team2" class="kelly-input" placeholder="Équipe extérieure" style="flex:1;min-width:130px">
+    </div>
+
+    <!-- Coupe (retour) -->
+    <div id="cupLegRow" style="display:none;margin-bottom:10px">
+      <input id="leg1Score" class="kelly-input" placeholder="Score match aller (ex: 1-2)">
+    </div>
+
+    <!-- EV + Kelly -->
+    <div class="ev-row">
+      <div class="ev-row-label">💰 Value Bet</div>
+      <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap">
+        <div style="flex:1;min-width:120px">
+          <input id="evOdds" class="kelly-input" type="number" step="0.01" min="1.01" placeholder="Cote bookmaker">
+        </div>
+        <div style="flex:1;min-width:120px">
+          <select id="evMarket" class="kelly-input">
+            <option value="">Marché…</option>
+            <option value="1">Victoire domicile (1)</option>
+            <option value="X">Nul (X)</option>
+            <option value="2">Victoire extérieur (2)</option>
+            <option value="O2.5">Over 2.5 buts</option>
+            <option value="U2.5">Under 2.5 buts</option>
+            <option value="BTTS">Les deux marquent</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="kelly-row" style="margin-bottom:12px">
+      <div class="kelly-label">📊 Kelly</div>
+      <div class="kelly-field"><label>BANKROLL (€)</label><input id="bankroll" class="kelly-input" type="number" value="100" min="1"></div>
+      <div class="kelly-field"><label>FRACTION KELLY</label>
+        <select id="kellyFraction" class="kelly-input">
+          <option value="0.25">¼ Kelly (prudent)</option>
+          <option value="0.5" selected>½ Kelly (standard)</option>
+          <option value="1">Kelly plein (agressif)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Bouton analyser -->
+    <button class="analyze-btn" id="analyzeBtn" onclick="analyze()">
+      <span>🔮</span><span>ANALYSER</span>
+    </button>
+
+    <!-- Loading -->
+    <div id="loading" class="loading">
+      <div class="big-spinner" id="bigSpinner"></div>
+      <div class="loading-text">Analyse en cours...</div>
+      <div style="margin-top:16px;display:flex;flex-direction:column;gap:6px;align-items:flex-start;max-width:260px;margin-left:auto;margin-right:auto">
+        <div class="load-step" id="ls1">📡 Récupération des données live...</div>
+        <div class="load-step" id="ls2">🧠 Analyse tactique IA...</div>
+        <div class="load-step" id="ls3">📊 Calcul des probabilités...</div>
+        <div class="load-step" id="ls4">💎 Détection des value bets...</div>
+      </div>
+    </div>
+
+    <!-- Erreur -->
+    <div id="errorBox" class="error-box"></div>
+
+    <!-- Résultats -->
+    <div id="results"></div>
+  </div>
+
+</div><!-- /pronoManuelSection -->
 
 </div><!-- /pronoView -->
 
