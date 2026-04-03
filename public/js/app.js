@@ -1748,6 +1748,24 @@ function _getSportEmoji(sport) {
   return SPORT_EMOJIS[key] || SPORT_EMOJIS[sport.toLowerCase()] || '🏆';
 }
 
+// Victor peut retourner : "Élevée", "Forte", "Très forte", "Moyenne", "Faible", "N/A"
+// → normalise en 3 niveaux pour les couleurs/scores
+function _confColor(conf) {
+  if (!conf) return '#ff6644';
+  const c = conf.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (c.includes('tres') || c.includes('tres') || c === 'forte' || c.includes('elev')) return '#00dd55';
+  if (c.includes('moy')) return '#ffcc00';
+  return '#ff6644';
+}
+function _confNum(conf) {
+  if (!conf) return 50;
+  const c = conf.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (c.includes('tres') || c === 'forte et tres forte') return 90;
+  if (c === 'forte' || c.includes('elev')) return 80;
+  if (c.includes('moy')) return 65;
+  return 50;
+}
+
 function _normalizeSport(sport) {
   if (!sport) return 'autre';
   const s = sport.toLowerCase();
@@ -1849,8 +1867,8 @@ function _renderPronoList() {
 
     const compsHtml = Object.entries(byComp).map(([comp, cPicks]) => {
       const picksHtml = cPicks.map(p => {
-        const confColor = p.confiance === 'Élevé' ? '#00dd55' : p.confiance === 'Moyen' ? '#ffcc00' : '#ff6644';
-        const confBg    = p.confiance === 'Élevé' ? 'rgba(0,221,85,.12)' : p.confiance === 'Moyen' ? 'rgba(255,204,0,.12)' : 'rgba(255,102,68,.12)';
+        const confColor = _confColor(p.confiance);
+        const confBg    = confColor === '#00dd55' ? 'rgba(0,221,85,.12)' : confColor === '#ffcc00' ? 'rgba(255,204,0,.12)' : 'rgba(255,102,68,.12)';
         return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
             <div style="flex:1;min-width:0">
@@ -1989,8 +2007,8 @@ function renderVictorPicks(picks, containerId) {
     return;
   }
   el.innerHTML = picks.map((p, i) => {
-    const confColor = p.confiance === 'Élevé' ? '#00dd55' : p.confiance === 'Moyen' ? '#ffcc00' : '#ff6644';
-    const confNum   = p.confiance === 'Élevé' ? 85 : p.confiance === 'Moyen' ? 70 : 55;
+    const confColor = _confColor(p.confiance);
+    const confNum   = _confNum(p.confiance);
     return `<div class="qp-card${i === 0 ? ' top-pick' : ''}">
       ${i === 0 ? '<div class="qp-card-badge">🎙️ VICTOR TOP PICK</div>' : ''}
       <div class="qp-card-match">${p.equipe_a || ''} vs ${p.equipe_b || ''}</div>

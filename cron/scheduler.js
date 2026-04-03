@@ -121,6 +121,24 @@ export function startScheduler() {
   jobHebdo.start();
   console.log(`Job Hebdo (Dim 01h00 Paris) démarré.`);
 
+  // ── Keepalive Render free tier ────────────────
+  // Render endort le serveur après 15min d'inactivité → les crons ne se déclenchent plus.
+  // Auto-ping /api/ping toutes les 10min pour maintenir le processus actif.
+  const RENDER_URL = process.env.RENDER_EXTERNAL_URL || process.env.APP_URL;
+  if (RENDER_URL) {
+    setInterval(async () => {
+      try {
+        await fetch(`${RENDER_URL}/api/ping`);
+        console.log(`💓 [${now()}] Keepalive ping OK`);
+      } catch (e) {
+        console.warn(`⚠️  [${now()}] Keepalive ping échoué:`, e.message);
+      }
+    }, 10 * 60 * 1000); // toutes les 10 minutes
+    console.log(`   💓 Keepalive actif → ${RENDER_URL}/api/ping (toutes les 10min)`);
+  } else {
+    console.log('   ⚠️  RENDER_EXTERNAL_URL non définie — keepalive désactivé');
+  }
+
   console.log('\n⏰ Scheduler Victor démarré :');
   console.log('   🌅 07h00 — Analyse du matin       (quotidien)');
   console.log('   🌆 13h00 — Refresh matchs du soir  (quotidien)');

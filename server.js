@@ -363,12 +363,12 @@ app.get('/api/victor/stats', generalLimiter, async (req, res) => {
         COUNT(*) FILTER (WHERE pronostic_correct = true)                             AS corrects,
         ROUND(AVG(CASE WHEN pronostic_correct = true THEN 1.0 ELSE 0 END) * 100, 2) AS taux_global,
         ROUND(AVG(CASE
-          WHEN confiance = 'Élevé' AND pronostic_correct = true  THEN 1.0
-          WHEN confiance = 'Élevé' AND pronostic_correct = false THEN 0
+          WHEN (confiance ILIKE '%lev%' OR confiance ILIKE 'forte' OR confiance ILIKE 'très forte') AND pronostic_correct = true  THEN 1.0
+          WHEN (confiance ILIKE '%lev%' OR confiance ILIKE 'forte' OR confiance ILIKE 'très forte') AND pronostic_correct = false THEN 0
         END) * 100, 2)                                                               AS taux_eleve,
         ROUND(AVG(CASE
-          WHEN confiance = 'Moyen' AND pronostic_correct = true  THEN 1.0
-          WHEN confiance = 'Moyen' AND pronostic_correct = false THEN 0
+          WHEN confiance ILIKE 'moy%' AND pronostic_correct = true  THEN 1.0
+          WHEN confiance ILIKE 'moy%' AND pronostic_correct = false THEN 0
         END) * 100, 2)                                                               AS taux_moyen
       FROM ps_pronostics
       WHERE pronostic_correct IS NOT NULL
@@ -485,6 +485,11 @@ app.post('/api/victor/refresh', async (req, res) => {
     status: 'started',
     message: 'Victor lance l\'analyse... Résultats dans /api/victor/today dans 30-60 secondes.',
   });
+});
+
+// ── ROUTE keepalive — évite le sleep Render free tier ──
+app.get('/api/ping', (req, res) => {
+  res.json({ ok: true, ts: Date.now(), uptime: Math.floor(process.uptime()) });
 });
 
 // ── ROUTE 6 : GET /api/victor/status ──────────
